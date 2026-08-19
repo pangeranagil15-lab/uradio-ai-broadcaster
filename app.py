@@ -34,12 +34,8 @@ def bersihkan_untuk_audio(teks):
 with st.sidebar:
     st.header("🔑 Login Sistem")
     role = st.selectbox("Masuk Sebagai:", ["Penyiar", "Pemimpin Redaksi"])
+    # Gemini API Key tetap manual di sini, atau nanti bisa dimasukkan ke Secrets juga kalau mau
     gemini_key = st.text_input("Gemini API Key", type="password")
-    
-    # --- INI BARIS YANG TADI HILANG ---
-    st.divider()
-    st.caption("Khusus Pemimpin Redaksi (Audio):")
-    elevenlabs_key = st.text_input("ElevenLabs API Key", type="password")
 
 st.title(f"🎙️ Meja {role} URadio")
 
@@ -117,11 +113,17 @@ elif role == "Pemimpin Redaksi":
                 with st.spinner("Merender Audio URadio..."):
                     teks_audio = bersihkan_untuk_audio(naskah_edit)
                     
-                    # Logika Pemilihan Suara
+                    # Logika Tarik API Key dari Streamlit Secrets (Aman)
+                    elevenlabs_key = ""
+                    try:
+                        elevenlabs_key = st.secrets["ELEVENLABS_API_KEY"]
+                    except:
+                        pass
+                    
                     if elevenlabs_key:
                         try:
                             # ---> GANTI TULISAN DI BAWAH INI DENGAN VOICE ID KAMU <---
-                            voice_id = "3rL9ZxRgBgIkh4tcbrEH" 
+                            voice_id = "MASUKKAN_ID_SUARA_KAMU_DI_SINI" 
                             
                             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
                             headers = {
@@ -141,9 +143,9 @@ elif role == "Pemimpin Redaksi":
                                     if chunk:
                                         f.write(chunk)
                         except Exception as e:
-                            st.error("Gagal terhubung ke ElevenLabs, pastikan API Key benar.")
+                            st.error("Gagal terhubung ke ElevenLabs.")
                     else:
-                        st.info("Menggunakan suara Google karena API ElevenLabs kosong.")
+                        st.info("API ElevenLabs di Secrets tidak ditemukan. Menggunakan suara Google.")
                         tts = gTTS(text=teks_audio, lang='id', slow=False)
                         tts.save("berita_siaran.mp3")
                     
