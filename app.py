@@ -1,9 +1,10 @@
 import streamlit as st
 import google.generativeai as genai
 import re
-from gtts import gTTS
 import json
 import os
+import requests
+from gtts import gTTS
 
 st.set_page_config(page_title="URadio AI Dashboard", page_icon="🎙️", layout="centered")
 
@@ -22,7 +23,6 @@ def save_db(data):
 
 db = load_db()
 
-# Fungsi Pembersih Teks Ekstra
 def bersihkan_untuk_audio(teks):
     teks = re.sub(r'\[.*?\]', '', teks)
     teks = re.sub(r'\(.*?\)', '', teks)
@@ -35,6 +35,9 @@ with st.sidebar:
     st.header("🔑 Login Sistem")
     role = st.selectbox("Masuk Sebagai:", ["Penyiar", "Pemimpin Redaksi"])
     gemini_key = st.text_input("Gemini API Key", type="password")
+    st.divider()
+    st.caption("Khusus Pemimpin Redaksi (Audio):")
+    elevenlabs_key = st.text_input("ElevenLabs API Key", type="password")
 
 st.title(f"🎙️ Meja {role} URadio")
 
@@ -111,8 +114,36 @@ elif role == "Pemimpin Redaksi":
             if st.button("✅ YES (Approve)", type="primary"):
                 with st.spinner("Merender Audio URadio..."):
                     teks_audio = bersihkan_untuk_audio(naskah_edit)
-                    tts = gTTS(text=teks_audio, lang='id', slow=False)
-                    tts.save("berita_siaran.mp3")
+                    
+                    # Logika Pemilihan Suara (ElevenLabs atau gTTS)
+                    if elevenlabs_key:
+                        try:
+                            # ID Suara "Adam" dari ElevenLabs (suara pria berwibawa)
+                            voice_id = "pNInz6obpgDQGcFmaJgB" 
+                            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+                            headers = {
+                                "Accept": "audio/mpeg",
+                                "Content-Type": "application/json",
+                                "xi-api-key": elevenlabs_key
+                            }
+                            data = {
+                                "text": teks_audio,
+                                "model_id": "eleven_multilingual_v2",
+                                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
+                            }
+                            response = requests.post(url, json=data, headers=headers)
+                            
+                            with open("berita_siaran.mp3", 'wb') as f:
+                                for chunk in response.iter_content(chunk_size=1024):
+                                    if chunk:
+                                        f.write(chunk)
+                        except Exception as e:
+                            st.error("Gagal terhubung ke ElevenLabs, pastikan API Key benar.")
+                    else:
+                        # Fallback ke Google Voice jika API Key ElevenLabs kosong
+                        st.info("Menggunakan suara Google karena API ElevenLabs kosong.")
+                        tts = gTTS(text=teks_audio, lang='id', slow=False)
+                        tts.save("berita_siaran.mp3")
                     
                     db["status"] = "approved"
                     db["naskah"] = teks_audio
@@ -128,7 +159,7 @@ elif role == "Pemimpin Redaksi":
                     with st.spinner("AI meracik ulang naskah..."):
                         genai.configure(api_key=gemini_key)
                         model = genai.GenerativeModel(model_name="gemini-3.6-flash")
-                        prompt_ulang = f"Tulis ulang informasi ini menjadi naskah radio lisan. Buka dengan 'Hai Derr.' Tutup dengan 'Tetap bersama kami, URadio, Membersamai Kita'. Gunakan bahasa ramah dan berwibawa. Panjang naskah WAJIB 800 hingga 1500 karakter (elaborasi ceritanya agar panjang). TANPA format markdown, TANPA instruksi SFX, tulis angka dengan huruf: {db['info_mentah']}"
+                        prompt_ulang = f"Tulis ulang informasi ini menjadi naskah radio lisan. Buka dengan 'Hai Derr.' Tutup dengan 'Tetap bersama kami, URadio, Membersamai Kita'. Gunakan bahasa ramah dan berwibawa. Panjang naskah WAJIB 800 hingga 1500 karakter. TANPA format markdown, TANPA instruksi SFX, tulis angka dengan huruf: {db['info_mentah']}"
                         response = model.generate_content(prompt_ulang)
                         db["naskah"] = bersihkan_untuk_audio(response.text)
                         save_db(db)
