@@ -35,6 +35,8 @@ with st.sidebar:
     st.header("🔑 Login Sistem")
     role = st.selectbox("Masuk Sebagai:", ["Penyiar", "Pemimpin Redaksi"])
     gemini_key = st.text_input("Gemini API Key", type="password")
+    
+    # --- INI BARIS YANG TADI HILANG ---
     st.divider()
     st.caption("Khusus Pemimpin Redaksi (Audio):")
     elevenlabs_key = st.text_input("ElevenLabs API Key", type="password")
@@ -115,11 +117,12 @@ elif role == "Pemimpin Redaksi":
                 with st.spinner("Merender Audio URadio..."):
                     teks_audio = bersihkan_untuk_audio(naskah_edit)
                     
-                    # Logika Pemilihan Suara (ElevenLabs atau gTTS)
+                    # Logika Pemilihan Suara
                     if elevenlabs_key:
                         try:
-                            # ID Suara "Adam" dari ElevenLabs (suara pria berwibawa)
+                            # ---> GANTI TULISAN DI BAWAH INI DENGAN VOICE ID KAMU <---
                             voice_id = "3rL9ZxRgBgIkh4tcbrEH" 
+                            
                             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
                             headers = {
                                 "Accept": "audio/mpeg",
@@ -140,7 +143,6 @@ elif role == "Pemimpin Redaksi":
                         except Exception as e:
                             st.error("Gagal terhubung ke ElevenLabs, pastikan API Key benar.")
                     else:
-                        # Fallback ke Google Voice jika API Key ElevenLabs kosong
                         st.info("Menggunakan suara Google karena API ElevenLabs kosong.")
                         tts = gTTS(text=teks_audio, lang='id', slow=False)
                         tts.save("berita_siaran.mp3")
