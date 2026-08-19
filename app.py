@@ -122,7 +122,7 @@ elif role == "Pemimpin Redaksi":
                     if elevenlabs_key:
                         try:
                             # ---> GANTI TULISAN DI BAWAH INI DENGAN VOICE ID KAMU <---
-                            voice_id = "MASUKKAN_ID_SUARA_KAMU_DI_SINI" 
+                            voice_id = "3rL9ZxRgBgIkh4tcbrEH" 
                             
                             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
                             headers = {
