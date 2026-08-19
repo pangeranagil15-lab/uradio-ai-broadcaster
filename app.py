@@ -119,7 +119,7 @@ elif role == "Pemimpin Redaksi":
                     if elevenlabs_key:
                         try:
                             # ID Suara "Adam" dari ElevenLabs (suara pria berwibawa)
-                            voice_id = "pNInz6obpgDQGcFmaJgB" 
+                            voice_id = "3rL9ZxRgBgIkh4tcbrEH" 
                             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
                             headers = {
                                 "Accept": "audio/mpeg",
