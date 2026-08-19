@@ -34,7 +34,6 @@ def bersihkan_untuk_audio(teks):
 with st.sidebar:
     st.header("🔑 Login Sistem")
     role = st.selectbox("Masuk Sebagai:", ["Penyiar", "Pemimpin Redaksi"])
-    # Gemini API Key tetap manual di sini, atau nanti bisa dimasukkan ke Secrets juga kalau mau
     gemini_key = st.text_input("Gemini API Key", type="password")
 
 st.title(f"🎙️ Meja {role} URadio")
@@ -123,7 +122,7 @@ elif role == "Pemimpin Redaksi":
                     if elevenlabs_key:
                         try:
                             # ---> GANTI TULISAN DI BAWAH INI DENGAN VOICE ID KAMU <---
-                            voice_id = "3rL9ZxRgBgIkh4tcbrEH" 
+                            voice_id = "MASUKKAN_ID_SUARA_KAMU_DI_SINI" 
                             
                             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
                             headers = {
@@ -136,24 +135,37 @@ elif role == "Pemimpin Redaksi":
                                 "model_id": "eleven_multilingual_v2",
                                 "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
                             }
+                            
                             response = requests.post(url, json=data, headers=headers)
                             
-                            with open("berita_siaran.mp3", 'wb') as f:
-                                for chunk in response.iter_content(chunk_size=1024):
-                                    if chunk:
-                                        f.write(chunk)
+                            # CEK APAKAH ELEVENLABS MENERIMA ATAU MENOLAK
+                            if response.status_code == 200:
+                                with open("berita_siaran.mp3", 'wb') as f:
+                                    for chunk in response.iter_content(chunk_size=1024):
+                                        if chunk:
+                                            f.write(chunk)
+                                
+                                db["status"] = "approved"
+                                db["naskah"] = teks_audio
+                                save_db(db)
+                                st.success("Naskah disetujui! Audio siap diputar.")
+                                st.rerun()
+                            else:
+                                # Jika ditolak, tampilkan pesan error aslinya agar kita tahu penyakitnya
+                                st.error(f"❌ ElevenLabs Error: {response.text}")
+                                
                         except Exception as e:
-                            st.error("Gagal terhubung ke ElevenLabs.")
+                            st.error(f"Gagal terhubung ke jaringan: {e}")
                     else:
                         st.info("API ElevenLabs di Secrets tidak ditemukan. Menggunakan suara Google.")
                         tts = gTTS(text=teks_audio, lang='id', slow=False)
                         tts.save("berita_siaran.mp3")
-                    
-                    db["status"] = "approved"
-                    db["naskah"] = teks_audio
-                    save_db(db)
-                    st.success("Naskah disetujui! Audio siap diputar.")
-                    st.rerun()
+                        
+                        db["status"] = "approved"
+                        db["naskah"] = teks_audio
+                        save_db(db)
+                        st.success("Naskah disetujui! Audio siap diputar.")
+                        st.rerun()
                     
         with col2:
             if st.button("🔄 Generate Ulang"):
