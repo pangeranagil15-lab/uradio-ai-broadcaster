@@ -59,7 +59,7 @@ USERS = {
         "nama": "Ki Sandi Suryadinata",
         "role": "Penyiar",
         "foto": "sandi.jpg", # Pastikan file sandi.jpg ada di GitHub
-        "voice_id": "pNInz6obpgDQGcFmaJgB" # Nanti ganti dengan ID Suara ElevenLabs milik Sandi
+        "voice_id": "wxuHKpeHPOQlfryZit7t" # Nanti ganti dengan ID Suara ElevenLabs milik Sandi
     }
 }
 
