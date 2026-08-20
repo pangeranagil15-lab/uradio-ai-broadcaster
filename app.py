@@ -4,18 +4,80 @@ import re
 import json
 import os
 import requests
+import ftplib
 from gtts import gTTS
 
-st.set_page_config(page_title="URadio AI Dashboard", page_icon="🎙️", layout="centered")
+# ==========================================
+# 1. SETUP TEMA & HALAMAN
+# ==========================================
+st.set_page_config(page_title="URadio Studio", page_icon="🎙️", layout="centered")
 
-# --- DATABASE SEDERHANA ---
+# --- CUSTOM CSS: TEMA DEEP NAVY & NEON BLUE ---
+st.markdown("""
+    <style>
+    /* Ubah warna background utama (opsional, karena Streamlit Dark Mode sudah bagus) */
+    
+    /* Tombol Utama (Neon Blue ala tombol 'Listen Live' di referensi) */
+    div.stButton > button:first-child {
+        background-color: #1e90ff !important;
+        color: white !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        border: none !important;
+        transition: 0.3s;
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #0077ea !important;
+        box-shadow: 0px 4px 15px rgba(30, 144, 255, 0.4) !important;
+    }
+    
+    /* Warna header */
+    h1, h2, h3 {
+        color: #1e90ff !important;
+    }
+    
+    /* Membulatkan form input */
+    .stTextInput input, .stTextArea textarea {
+        border-radius: 10px !important;
+        border: 1px solid #1e90ff !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. DATABASE PEGAWAI & LOGIN SYSTEM
+# ==========================================
+# Di sinilah lu nambahin penyiar baru nantinya!
+USERS = {
+    "1111": {
+        "nama": "Agustian",
+        "role": "Pemimpin Redaksi",
+        "foto": "agustian.jpg", # Pastikan file agustian.jpg ada di GitHub
+        "voice_id": "" # Pemred nggak butuh Voice ID
+    },
+    "2222": {
+        "nama": "Ki Sandi Suryadinata",
+        "role": "Penyiar",
+        "foto": "sandi.jpg", # Pastikan file sandi.jpg ada di GitHub
+        "voice_id": "pNInz6obpgDQGcFmaJgB" # Nanti ganti dengan ID Suara ElevenLabs milik Sandi
+    }
+}
+
+# Inisialisasi status login di memori
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user_data = None
+
+# ==========================================
+# 3. FUNGSI-FUNGSI PENDUKUNG (DATABASE & FTP)
+# ==========================================
 DB_FILE = "database_berita.json"
 
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             return json.load(f)
-    return {"status": "kosong", "info_mentah": "", "naskah": ""}
+    return {"status": "kosong", "info_mentah": "", "naskah": "", "penulis": "", "voice_id_penulis": ""}
 
 def save_db(data):
     with open(DB_FILE, "w") as f:
@@ -30,167 +92,159 @@ def bersihkan_untuk_audio(teks):
     teks = re.sub(r'^(Berikut|Ini).*?:\n', '', teks, flags=re.IGNORECASE)
     return teks.strip()
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("🔑 Login Sistem")
-    role = st.selectbox("Masuk Sebagai:", ["Penyiar", "Pemimpin Redaksi"])
-    gemini_key = st.text_input("Gemini API Key", type="password")
-
-st.title(f"🎙️ Meja {role} URadio")
+def kirim_ke_radio(nama_file_lokal, nama_file_di_server):
+    try:
+        ftp = ftplib.FTP()
+        ftp.connect(st.secrets["FTP_HOST"], int(st.secrets["FTP_PORT"]))
+        ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
+        with open(nama_file_lokal, 'rb') as f:
+            ftp.storbinary(f'STOR {nama_file_di_server}', f)
+        ftp.quit()
+        return True
+    except Exception as e:
+        st.error(f"Gagal konek FTP: {e}")
+        return False
 
 # ==========================================
-# 1. TAMPILAN PENYIAR
+# 4. HALAMAN LOGIN
 # ==========================================
-if role == "Penyiar":
-    st.subheader("Buat Draft Berita")
-    info_mentah = st.text_area("Masukkan info mentah berita:", value=db.get("info_mentah", ""))
+if not st.session_state.logged_in:
+    st.markdown("<h1 style='text-align: center;'>URADIO STUDIO</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Membersamai Kita - Internal Access</p>", unsafe_allow_html=True)
     
-    if st.button("🚀 Buat Naskah & Kirim ke Redaksi", type="primary"):
-        if not gemini_key:
-            st.error("Masukkan Gemini API Key di sidebar terlebih dahulu!")
-        elif not info_mentah.strip():
-            st.warning("Masukkan informasi berita terlebih dahulu!")
-        else:
-            with st.spinner("AI sedang menyusun gaya bahasa URadio (800-1500 karakter)..."):
-                genai.configure(api_key=gemini_key)
-                
-                system_prompt = """
-                Anda adalah penyiar radio profesional untuk 'URadio'.
-                Tugas: Ubah informasi mentah menjadi naskah siaran radio lisan (spoken words) yang siap dibaca mengudara.
-                
-                ATURAN WAJIB FORMAT SIARAN:
-                1. Salam Pembuka WAJIB diawali dengan kalimat persis: "Hai Derr."
-                2. Penutup Siaran WAJIB diakhiri dengan kalimat persis: "Tetap bersama kami, URadio, Membersamai Kita"
-                3. Gaya Bahasa: Bahasa tutur radio (spoken language) yang ramah, berwibawa, dan enak didengar.
-                4. PANJANG NASKAH: WAJIB antara 800 hingga 1500 karakter huruf. Elaborasi dan jabarkan informasi mentah dengan detail yang mengalir agar panjang naskah mencapai target ini, namun jangan terdengar bertele-tele.
-                
-                ATURAN SANGAT KETAT:
-                1. HANYA keluarkan kalimat yang diucapkan langsung oleh penyiar dari awal sampai akhir.
-                2. JANGAN gunakan tanda format markdown (DILARANG menggunakan bintang **, ***, tanda pagar #, atau bullet points).
-                3. JANGAN tuliskan instruksi panggung/teknis seperti 'SFX', 'Musik', 'Fade in', 'Fade out', atau '[Penyiar]'.
-                4. JANGAN tambahkan kalimat pembuka/basa-basi seperti 'Berikut adalah naskah...'.
-                5. Tuliskan angka dalam bentuk kata ejaan (misal: 'empat puluh dua', 'seratus dua puluh tahun').
-                """
-                
-                model = genai.GenerativeModel(model_name="gemini-3.6-flash", system_instruction=system_prompt)
-                response = model.generate_content(info_mentah)
-                
-                naskah_murni = bersihkan_untuk_audio(response.text)
-                
-                db["status"] = "menunggu_validasi"
-                db["info_mentah"] = info_mentah
-                db["naskah"] = naskah_murni
-                save_db(db)
-                st.success("Draft ala URadio terkirim ke Pemimpin Redaksi!")
-
-    if db["status"] == "approved":
-        st.divider()
-        st.success("✅ Naskah telah disetujui Pemimpin Redaksi!")
-        st.text_area("Naskah Final:", value=db["naskah"], height=250)
-        st.audio("berita_siaran.mp3")
-
-# ==========================================
-# 2. TAMPILAN PEMIMPIN REDAKSI
-# ==========================================
-elif role == "Pemimpin Redaksi":
-    st.subheader("Meja Redaksi (Validasi)")
-    
-    if db["status"] == "kosong":
-        st.info("Belum ada draft berita baru dari penyiar.")
-        
-    elif db["status"] == "menunggu_validasi":
-        st.warning("⚠️ Ada naskah baru yang perlu divalidasi!")
-        
-        jumlah_karakter = len(db["naskah"])
-        st.caption(f"Panjang Naskah Saat Ini: {jumlah_karakter} karakter")
-        
-        naskah_edit = st.text_area("Review / Edit Naskah:", value=db["naskah"], height=300)
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("✅ YES (Approve)", type="primary"):
-                with st.spinner("Merender Audio URadio..."):
-                    teks_audio = bersihkan_untuk_audio(naskah_edit)
-                    
-                    # Logika Tarik API Key dari Streamlit Secrets (Aman)
-                    elevenlabs_key = ""
-                    try:
-                        elevenlabs_key = st.secrets["ELEVENLABS_API_KEY"]
-                    except:
-                        pass
-                    
-                    if elevenlabs_key:
-                        try:
-                            # ---> GANTI TULISAN DI BAWAH INI DENGAN VOICE ID KAMU <---
-                            voice_id = "wxuHKpeHPOQlfryZit7t" 
-                            
-                            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-                            headers = {
-                                "Accept": "audio/mpeg",
-                                "Content-Type": "application/json",
-                                "xi-api-key": elevenlabs_key
-                            }
-                            data = {
-                                "text": teks_audio,
-                                "model_id": "eleven_multilingual_v2",
-                                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-                            }
-                            
-                            response = requests.post(url, json=data, headers=headers)
-                            
-                            # CEK APAKAH ELEVENLABS MENERIMA ATAU MENOLAK
-                            if response.status_code == 200:
-                                with open("berita_siaran.mp3", 'wb') as f:
-                                    for chunk in response.iter_content(chunk_size=1024):
-                                        if chunk:
-                                            f.write(chunk)
-                                
-                                db["status"] = "approved"
-                                db["naskah"] = teks_audio
-                                save_db(db)
-                                st.success("Naskah disetujui! Audio siap diputar.")
-                                st.rerun()
-                            else:
-                                # Jika ditolak, tampilkan pesan error aslinya agar kita tahu penyakitnya
-                                st.error(f"❌ ElevenLabs Error: {response.text}")
-                                
-                        except Exception as e:
-                            st.error(f"Gagal terhubung ke jaringan: {e}")
-                    else:
-                        st.info("API ElevenLabs di Secrets tidak ditemukan. Menggunakan suara Google.")
-                        tts = gTTS(text=teks_audio, lang='id', slow=False)
-                        tts.save("berita_siaran.mp3")
-                        
-                        db["status"] = "approved"
-                        db["naskah"] = teks_audio
-                        save_db(db)
-                        st.success("Naskah disetujui! Audio siap diputar.")
-                        st.rerun()
-                    
-        with col2:
-            if st.button("🔄 Generate Ulang"):
-                if not gemini_key:
-                    st.error("Isi API Key di Sidebar!")
-                else:
-                    with st.spinner("AI meracik ulang naskah..."):
-                        genai.configure(api_key=gemini_key)
-                        model = genai.GenerativeModel(model_name="gemini-3.6-flash")
-                        prompt_ulang = f"Tulis ulang informasi ini menjadi naskah radio lisan. Buka dengan 'Hai Derr.' Tutup dengan 'Tetap bersama kami, URadio, Membersamai Kita'. Gunakan bahasa ramah dan berwibawa. Panjang naskah WAJIB 800 hingga 1500 karakter. TANPA format markdown, TANPA instruksi SFX, tulis angka dengan huruf: {db['info_mentah']}"
-                        response = model.generate_content(prompt_ulang)
-                        db["naskah"] = bersihkan_untuk_audio(response.text)
-                        save_db(db)
-                        st.rerun()
-
-        with col3:
-            if st.button("❌ NO (Tolak)"):
-                db["status"] = "kosong"
-                db["info_mentah"] = ""
-                db["naskah"] = ""
-                save_db(db)
-                st.error("Naskah ditolak.")
+    with st.container(border=True):
+        st.subheader("🔐 Masukkan PIN Akses")
+        pin_input = st.text_input("PIN:", type="password", placeholder="****")
+        if st.button("Masuk Studio", use_container_width=True):
+            if pin_input in USERS:
+                st.session_state.logged_in = True
+                st.session_state.user_data = USERS[pin_input]
+                st.toast(f"Selamat datang, {USERS[pin_input]['nama']}!", icon="👋")
                 st.rerun()
+            else:
+                st.error("PIN Salah atau Tidak Terdaftar!")
+
+# ==========================================
+# 5. HALAMAN UTAMA (SETELAH LOGIN)
+# ==========================================
+else:
+    user = st.session_state.user_data
+    
+    # --- SIDEBAR (PROFIL USER) ---
+    with st.sidebar:
+        # Coba tampilkan foto, kalau file tidak ada, jangan error
+        try:
+            st.image(user["foto"], width=150, use_container_width=True)
+        except:
+            st.info("Foto belum diupload ke GitHub")
+            
+        st.title(user["nama"])
+        st.caption(f"Posisi: {user['role']}")
+        st.divider()
+        
+        if st.button("🚪 Keluar / Logout", type="secondary"):
+            st.session_state.logged_in = False
+            st.session_state.user_data = None
+            st.rerun()
+
+    # --- KONTEN UTAMA BERDASARKAN ROLE ---
+    st.title(f"🎙️ Meja {user['role']}")
+    
+    # A. JIKA YANG LOGIN ADALAH PENYIAR (KI SANDI)
+    if user["role"] == "Penyiar":
+        with st.container(border=True):
+            st.subheader("📝 Draft Berita Baru")
+            info_mentah = st.text_area("Informasi Mentah:", value=db.get("info_mentah", ""), height=150)
+            
+            if st.button("🚀 Kirim ke Pemred", use_container_width=True):
+                if not info_mentah.strip():
+                    st.warning("Isi berita dulu!")
+                else:
+                    with st.spinner("AI Meracik Naskah..."):
+                        try:
+                            gemini_key = st.secrets["GEMINI_API_KEY"]
+                            genai.configure(api_key=gemini_key)
+                            prompt = f"Ubah jadi naskah radio lisan (800-1500 huruf). Buka: 'Hai Derr.' Tutup: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown.\n\n{info_mentah}"
+                            model = genai.GenerativeModel("gemini-3.6-flash")
+                            response = model.generate_content(prompt)
+                            
+                            db["status"] = "menunggu_validasi"
+                            db["info_mentah"] = info_mentah
+                            db["naskah"] = bersihkan_untuk_audio(response.text)
+                            db["penulis"] = user["nama"] # Catat siapa yang nulis
+                            db["voice_id_penulis"] = user["voice_id"] # Catat ID suaranya
+                            save_db(db)
+                            
+                            st.success("Terkirim ke meja Agustian!")
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"Error AI: Pastikan kunci Gemini ada di Secrets. Detail: {e}")
+
+        if db["status"] == "approved":
+            st.info("✅ Naskah terakhirmu sudah mengudara.")
+
+    # B. JIKA YANG LOGIN ADALAH PEMRED (AGUSTIAN)
+    elif user["role"] == "Pemimpin Redaksi":
+        if db["status"] == "kosong":
+            st.info("Belum ada draft masuk.")
+            
+        elif db["status"] == "menunggu_validasi":
+            st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Penyiar')}")
+            
+            with st.container(border=True):
+                jml_kar = len(db["naskah"])
+                col_met, col_prog = st.columns([1,3])
+                col_met.metric(label="Karakter", value=jml_kar)
+                col_prog.progress(min(jml_kar/1500, 1.0))
                 
-    elif db["status"] == "approved":
-        st.success("Berita sudah disetujui dan siap siar.")
-        st.text_area("Naskah Final:", value=db["naskah"], height=250)
-        st.audio("berita_siaran.mp3")
+                # Pemred milih jadwal tayang MediaCP
+                pilihan_jadwal = st.radio("Pilih Slot Tayang FTP:", 
+                    ["Pagi (berita_pagi.mp3)", "Siang (berita_siang.mp3)", "Sore (berita_sore.mp3)"], horizontal=True)
+                
+                nama_file_server = re.search(r'\((.*?)\)', pilihan_jadwal).group(1)
+                
+                naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=250)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Approve & Siarkan", use_container_width=True):
+                        with st.spinner("Memproduksi Audio Premium..."):
+                            teks_audio = bersihkan_untuk_audio(naskah_edit)
+                            suara_yg_dipakai = db.get("voice_id_penulis", "")
+                            
+                            elevenlabs_key = ""
+                            try: elevenlabs_key = st.secrets["ELEVENLABS_API_KEY"]
+                            except: pass
+                            
+                            if elevenlabs_key and suara_yg_dipakai:
+                                try:
+                                    url = f"https://api.elevenlabs.io/v1/text-to-speech/{suara_yg_dipakai}"
+                                    headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": elevenlabs_key}
+                                    data = {"text": teks_audio, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}
+                                    res = requests.post(url, json=data, headers=headers)
+                                    
+                                    if res.status_code == 200:
+                                        with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
+                                        
+                                        # Eksekusi FTP
+                                        if kirim_ke_radio("berita_siaran.mp3", nama_file_server):
+                                            db["status"] = "approved"
+                                            db["naskah"] = teks_audio
+                                            save_db(db)
+                                            st.toast('Siaaap! Audio mengudara!', icon='📡')
+                                            st.rerun()
+                                    else: st.error("Gagal Render ElevenLabs.")
+                                except Exception as e: st.error(f"Error AI: {e}")
+                            else:
+                                st.error("API ElevenLabs atau Voice ID penyiar tidak ditemukan!")
+
+                with col2:
+                    if st.button("❌ Tolak Naskah", use_container_width=True):
+                        db["status"] = "kosong"
+                        db["info_mentah"] = ""
+                        save_db(db)
+                        st.rerun()
+                        
+        elif db["status"] == "approved":
+            st.success("✅ Naskah terakhir sudah masuk server.")
+            st.audio("berita_siaran.mp3")
