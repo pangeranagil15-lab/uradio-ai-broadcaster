@@ -5,17 +5,14 @@ import json
 import os
 import requests
 import ftplib
-from gtts import gTTS
 
 # ==========================================
 # 1. SETUP TEMA & HALAMAN
 # ==========================================
 st.set_page_config(page_title="URadio Studio", page_icon="🎙️", layout="centered")
 
-# --- CUSTOM CSS: TEMA DEEP NAVY & NEON BLUE ---
 st.markdown("""
     <style>
-    /* Tombol Utama (Neon Blue) */
     div.stButton > button:first-child {
         background-color: #1e90ff !important;
         color: white !important;
@@ -28,13 +25,7 @@ st.markdown("""
         background-color: #0077ea !important;
         box-shadow: 0px 4px 15px rgba(30, 144, 255, 0.4) !important;
     }
-    
-    /* Warna header */
-    h1, h2, h3 {
-        color: #1e90ff !important;
-    }
-    
-    /* Membulatkan form input */
+    h1, h2, h3 { color: #1e90ff !important; }
     .stTextInput input, .stTextArea textarea {
         border-radius: 10px !important;
         border: 1px solid #1e90ff !important;
@@ -56,30 +47,26 @@ USERS = {
         "nama": "Ki Sandi Suryadinata",
         "role": "Penyiar",
         "foto": "sandi.jpg", 
-        # Voice ID Premium Ki Sandi sudah dimasukkan di sini:
         "voice_id": "wxuHKpeHPOQlfryZit7t" 
     }
 }
 
-# Inisialisasi status login di memori
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_data = None
 
 # ==========================================
-# 3. FUNGSI-FUNGSI PENDUKUNG (DATABASE & FTP)
+# 3. FUNGSI-FUNGSI PENDUKUNG
 # ==========================================
 DB_FILE = "database_berita.json"
 
 def load_db():
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
+        with open(DB_FILE, "r") as f: return json.load(f)
     return {"status": "kosong", "info_mentah": "", "naskah": "", "penulis": "", "voice_id_penulis": ""}
 
 def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f)
+    with open(DB_FILE, "w") as f: json.dump(data, f)
 
 db = load_db()
 
@@ -90,11 +77,16 @@ def bersihkan_untuk_audio(teks):
     teks = re.sub(r'^(Berikut|Ini).*?:\n', '', teks, flags=re.IGNORECASE)
     return teks.strip()
 
+# --- KURIR FTP (UDAH DI-UPGRADE PAKAI PASSIVE MODE) ---
 def kirim_ke_radio(nama_file_lokal, nama_file_di_server):
     try:
         ftp = ftplib.FTP()
         ftp.connect(st.secrets["FTP_HOST"], int(st.secrets["FTP_PORT"]))
         ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
+        
+        # Ini kunci rahasia biar nggak Connection Refused (Errno 111)
+        ftp.set_pasv(True) 
+        
         with open(nama_file_lokal, 'rb') as f:
             ftp.storbinary(f'STOR {nama_file_di_server}', f)
         ftp.quit()
@@ -123,33 +115,26 @@ if not st.session_state.logged_in:
                 st.error("PIN Salah atau Tidak Terdaftar!")
 
 # ==========================================
-# 5. HALAMAN UTAMA (SETELAH LOGIN)
+# 5. HALAMAN UTAMA
 # ==========================================
 else:
     user = st.session_state.user_data
     
-    # --- SIDEBAR (PROFIL USER) ---
     with st.sidebar:
-        try:
-            st.image(user["foto"], width=150, use_container_width=True)
-        except:
-            st.info("Foto belum diupload")
+        try: st.image(user["foto"], width=150, use_container_width=True)
+        except: st.info("Foto belum diupload")
             
         st.title(user["nama"])
         st.caption(f"Posisi: {user['role']}")
         st.divider()
-        
         if st.button("🚪 Keluar / Logout", type="secondary"):
             st.session_state.logged_in = False
             st.session_state.user_data = None
             st.rerun()
 
-    # --- KONTEN UTAMA ---
     st.title(f"🎙️ Meja {user['role']}")
     
-    # ==========================
-    # A. TAMPILAN PENYIAR
-    # ==========================
+    # --- A. PENYIAR ---
     if user["role"] == "Penyiar":
         with st.container(border=True):
             st.subheader("📝 Draft Berita Baru")
@@ -176,15 +161,12 @@ else:
                             
                             st.success("Terkirim ke meja Agustian!")
                             st.balloons()
-                        except Exception as e:
-                            st.error(f"Error AI: Pastikan kunci Gemini ada di Secrets. Detail: {e}")
+                        except Exception as e: st.error(f"Error AI: {e}")
 
         if db["status"] == "approved":
             st.info("✅ Naskah terakhirmu sudah mengudara.")
 
-    # ==========================
-    # B. TAMPILAN PEMRED
-    # ==========================
+    # --- B. PEMRED ---
     elif user["role"] == "Pemimpin Redaksi":
         if db["status"] == "kosong":
             st.info("Belum ada draft masuk.")
@@ -198,17 +180,12 @@ else:
                 col_met.metric(label="Karakter", value=jml_kar)
                 col_prog.progress(min(jml_kar/1500, 1.0))
                 
-                pilihan_jadwal = st.radio("Pilih Slot Tayang FTP:", 
-                    ["Pagi (berita_pagi.mp3)", "Siang (berita_siang.mp3)", "Sore (berita_sore.mp3)"], horizontal=True)
-                
-                nama_file_server = re.search(r'\((.*?)\)', pilihan_jadwal).group(1)
-                
                 naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=250)
                 
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("✅ Approve & Siarkan", use_container_width=True):
-                        with st.spinner("Memproduksi Audio Premium..."):
+                        with st.spinner("Memproduksi Audio & Mengirim ke Server..."):
                             teks_audio = bersihkan_untuk_audio(naskah_edit)
                             suara_yg_dipakai = db.get("voice_id_penulis", "")
                             
@@ -218,7 +195,6 @@ else:
                             
                             if elevenlabs_key and suara_yg_dipakai:
                                 try:
-                                    # --- PEMBERSIH KARAKTER GAIB ---
                                     suara_bersih = suara_yg_dipakai.encode('ascii', 'ignore').decode().strip()
                                     kunci_bersih = elevenlabs_key.encode('ascii', 'ignore').decode().strip()
                                     
@@ -230,15 +206,15 @@ else:
                                     if res.status_code == 200:
                                         with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
                                         
-                                        # Eksekusi FTP
-                                        if kirim_ke_radio("berita_siaran.mp3", nama_file_server):
+                                        # Langsung eksekusi FTP jadi 1 file statis: berita_terbaru.mp3
+                                        if kirim_ke_radio("berita_siaran.mp3", "berita_terbaru.mp3"):
                                             db["status"] = "approved"
                                             db["naskah"] = teks_audio
                                             save_db(db)
-                                            st.toast('Siaaap! Audio mengudara!', icon='📡')
+                                            st.toast('Siaaap! Audio berhasil mengudara!', icon='📡')
                                             st.rerun()
                                     else: st.error(f"ElevenLabs Error: {res.text}")
-                                except Exception as e: st.error(f"Error AI: {e}")
+                                except Exception as e: st.error(f"Error Sistem: {e}")
                             else:
                                 st.error("API ElevenLabs atau Voice ID penyiar tidak ditemukan!")
 
@@ -250,5 +226,5 @@ else:
                         st.rerun()
                         
         elif db["status"] == "approved":
-            st.success("✅ Naskah terakhir sudah masuk server.")
+            st.success("✅ Naskah terakhir sudah berhasil masuk ke MediaCP (berita_terbaru.mp3).")
             st.audio("berita_siaran.mp3")
