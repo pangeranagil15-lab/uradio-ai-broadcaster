@@ -77,16 +77,13 @@ def bersihkan_untuk_audio(teks):
     teks = re.sub(r'^(Berikut|Ini).*?:\n', '', teks, flags=re.IGNORECASE)
     return teks.strip()
 
-# --- KURIR FTP (UDAH DI-UPGRADE PAKAI PASSIVE MODE) ---
+# --- KURIR FTP ---
 def kirim_ke_radio(nama_file_lokal, nama_file_di_server):
     try:
         ftp = ftplib.FTP()
         ftp.connect(st.secrets["FTP_HOST"], int(st.secrets["FTP_PORT"]))
         ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
-        
-        # Ini kunci rahasia biar nggak Connection Refused (Errno 111)
-        ftp.set_pasv(True) 
-        
+        ftp.set_pasv(True) # Passive mode agar tidak diblokir
         with open(nama_file_lokal, 'rb') as f:
             ftp.storbinary(f'STOR {nama_file_di_server}', f)
         ftp.quit()
@@ -120,6 +117,7 @@ if not st.session_state.logged_in:
 else:
     user = st.session_state.user_data
     
+    # --- SIDEBAR (PROFIL) ---
     with st.sidebar:
         try: st.image(user["foto"], width=150, use_container_width=True)
         except: st.info("Foto belum diupload")
@@ -134,7 +132,9 @@ else:
 
     st.title(f"🎙️ Meja {user['role']}")
     
-    # --- A. PENYIAR ---
+    # ==========================
+    # A. TAMPILAN PENYIAR
+    # ==========================
     if user["role"] == "Penyiar":
         with st.container(border=True):
             st.subheader("📝 Draft Berita Baru")
@@ -166,7 +166,9 @@ else:
         if db["status"] == "approved":
             st.info("✅ Naskah terakhirmu sudah mengudara.")
 
-    # --- B. PEMRED ---
+    # ==========================
+    # B. TAMPILAN PEMRED
+    # ==========================
     elif user["role"] == "Pemimpin Redaksi":
         if db["status"] == "kosong":
             st.info("Belum ada draft masuk.")
@@ -185,7 +187,7 @@ else:
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("✅ Approve & Siarkan", use_container_width=True):
-                        with st.spinner("Memproduksi Audio & Mengirim ke Server..."):
+                        with st.spinner("Memproduksi Audio Premium..."):
                             teks_audio = bersihkan_untuk_audio(naskah_edit)
                             suara_yg_dipakai = db.get("voice_id_penulis", "")
                             
@@ -195,6 +197,7 @@ else:
                             
                             if elevenlabs_key and suara_yg_dipakai:
                                 try:
+                                    # --- MESIN CUCI KARAKTER GAIB ---
                                     suara_bersih = suara_yg_dipakai.encode('ascii', 'ignore').decode().strip()
                                     kunci_bersih = elevenlabs_key.encode('ascii', 'ignore').decode().strip()
                                     
@@ -206,13 +209,18 @@ else:
                                     if res.status_code == 200:
                                         with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
                                         
-                                        # Langsung eksekusi FTP jadi 1 file statis: berita_terbaru.mp3
-                                        if kirim_ke_radio("berita_siaran.mp3", "berita_terbaru.mp3"):
-                                            db["status"] = "approved"
-                                            db["naskah"] = teks_audio
-                                            save_db(db)
-                                            st.toast('Siaaap! Audio berhasil mengudara!', icon='📡')
-                                            st.rerun()
+                                        db["status"] = "approved"
+                                        db["naskah"] = teks_audio
+                                        save_db(db)
+                                        
+                                        # Kirim FTP
+                                        kirim_sukses = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru.mp3")
+                                        if kirim_sukses:
+                                            st.toast('Siaaap! Audio langsung masuk MediaCP!', icon='📡')
+                                        else:
+                                            st.warning("Gagal FTP karena diblokir Server Cloud. Silakan pakai tombol Download di bawah.")
+                                            
+                                        st.rerun()
                                     else: st.error(f"ElevenLabs Error: {res.text}")
                                 except Exception as e: st.error(f"Error Sistem: {e}")
                             else:
@@ -226,5 +234,15 @@ else:
                         st.rerun()
                         
         elif db["status"] == "approved":
-            st.success("✅ Naskah terakhir sudah berhasil masuk ke MediaCP (berita_terbaru.mp3).")
+            st.success("✅ Naskah Approved dan Audio siap!")
             st.audio("berita_siaran.mp3")
+            
+            # --- JALUR DARURAT (DOWNLOAD MANUAL JIKA FTP DIBLOKIR) ---
+            with open("berita_siaran.mp3", "rb") as file_mp3:
+                st.download_button(
+                    label="⬇️ Download Audio (Jalur Manual)",
+                    data=file_mp3,
+                    file_name="berita_terbaru.mp3",
+                    mime="audio/mpeg",
+                    use_container_width=True
+                )
