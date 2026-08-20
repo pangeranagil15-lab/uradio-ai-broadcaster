@@ -15,9 +15,7 @@ st.set_page_config(page_title="URadio Studio", page_icon="🎙️", layout="cent
 # --- CUSTOM CSS: TEMA DEEP NAVY & NEON BLUE ---
 st.markdown("""
     <style>
-    /* Ubah warna background utama (opsional, karena Streamlit Dark Mode sudah bagus) */
-    
-    /* Tombol Utama (Neon Blue ala tombol 'Listen Live' di referensi) */
+    /* Tombol Utama (Neon Blue) */
     div.stButton > button:first-child {
         background-color: #1e90ff !important;
         color: white !important;
@@ -47,19 +45,19 @@ st.markdown("""
 # ==========================================
 # 2. DATABASE PEGAWAI & LOGIN SYSTEM
 # ==========================================
-# Di sinilah lu nambahin penyiar baru nantinya!
 USERS = {
     "1111": {
         "nama": "Agustian",
         "role": "Pemimpin Redaksi",
-        "foto": "agustian.jpg", # Pastikan file agustian.jpg ada di GitHub
-        "voice_id": "" # Pemred nggak butuh Voice ID
+        "foto": "agustian.jpg", 
+        "voice_id": "" 
     },
     "2222": {
         "nama": "Ki Sandi Suryadinata",
         "role": "Penyiar",
-        "foto": "sandi.jpg", # Pastikan file sandi.jpg ada di GitHub
-        "voice_id": "wxuHKpeHPOQlfryZit7t" # Nanti ganti dengan ID Suara ElevenLabs milik Sandi
+        "foto": "sandi.jpg", 
+        # Voice ID Premium Ki Sandi sudah dimasukkan di sini:
+        "voice_id": "wxuHKpeHPOQlfryZit7t" 
     }
 }
 
@@ -132,11 +130,10 @@ else:
     
     # --- SIDEBAR (PROFIL USER) ---
     with st.sidebar:
-        # Coba tampilkan foto, kalau file tidak ada, jangan error
         try:
             st.image(user["foto"], width=150, use_container_width=True)
         except:
-            st.info("Foto belum diupload ke GitHub")
+            st.info("Foto belum diupload")
             
         st.title(user["nama"])
         st.caption(f"Posisi: {user['role']}")
@@ -147,10 +144,12 @@ else:
             st.session_state.user_data = None
             st.rerun()
 
-    # --- KONTEN UTAMA BERDASARKAN ROLE ---
+    # --- KONTEN UTAMA ---
     st.title(f"🎙️ Meja {user['role']}")
     
-    # A. JIKA YANG LOGIN ADALAH PENYIAR (KI SANDI)
+    # ==========================
+    # A. TAMPILAN PENYIAR
+    # ==========================
     if user["role"] == "Penyiar":
         with st.container(border=True):
             st.subheader("📝 Draft Berita Baru")
@@ -171,8 +170,8 @@ else:
                             db["status"] = "menunggu_validasi"
                             db["info_mentah"] = info_mentah
                             db["naskah"] = bersihkan_untuk_audio(response.text)
-                            db["penulis"] = user["nama"] # Catat siapa yang nulis
-                            db["voice_id_penulis"] = user["voice_id"] # Catat ID suaranya
+                            db["penulis"] = user["nama"] 
+                            db["voice_id_penulis"] = user["voice_id"] 
                             save_db(db)
                             
                             st.success("Terkirim ke meja Agustian!")
@@ -183,7 +182,9 @@ else:
         if db["status"] == "approved":
             st.info("✅ Naskah terakhirmu sudah mengudara.")
 
-    # B. JIKA YANG LOGIN ADALAH PEMRED (AGUSTIAN)
+    # ==========================
+    # B. TAMPILAN PEMRED
+    # ==========================
     elif user["role"] == "Pemimpin Redaksi":
         if db["status"] == "kosong":
             st.info("Belum ada draft masuk.")
@@ -197,7 +198,6 @@ else:
                 col_met.metric(label="Karakter", value=jml_kar)
                 col_prog.progress(min(jml_kar/1500, 1.0))
                 
-                # Pemred milih jadwal tayang MediaCP
                 pilihan_jadwal = st.radio("Pilih Slot Tayang FTP:", 
                     ["Pagi (berita_pagi.mp3)", "Siang (berita_siang.mp3)", "Sore (berita_sore.mp3)"], horizontal=True)
                 
@@ -218,8 +218,12 @@ else:
                             
                             if elevenlabs_key and suara_yg_dipakai:
                                 try:
-                                    url = f"https://api.elevenlabs.io/v1/text-to-speech/{suara_yg_dipakai}"
-                                    headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": elevenlabs_key}
+                                    # --- PEMBERSIH KARAKTER GAIB ---
+                                    suara_bersih = suara_yg_dipakai.encode('ascii', 'ignore').decode().strip()
+                                    kunci_bersih = elevenlabs_key.encode('ascii', 'ignore').decode().strip()
+                                    
+                                    url = f"https://api.elevenlabs.io/v1/text-to-speech/{suara_bersih}"
+                                    headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": kunci_bersih}
                                     data = {"text": teks_audio, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}
                                     res = requests.post(url, json=data, headers=headers)
                                     
@@ -233,7 +237,7 @@ else:
                                             save_db(db)
                                             st.toast('Siaaap! Audio mengudara!', icon='📡')
                                             st.rerun()
-                                    else: st.error("Gagal Render ElevenLabs.")
+                                    else: st.error(f"ElevenLabs Error: {res.text}")
                                 except Exception as e: st.error(f"Error AI: {e}")
                             else:
                                 st.error("API ElevenLabs atau Voice ID penyiar tidak ditemukan!")
