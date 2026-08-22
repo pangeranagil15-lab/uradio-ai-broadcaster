@@ -126,9 +126,9 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             
             # --- PROSES 3: TUKANG SAPU DI BALIK LAYAR ---
             def hapus_background(cookies_dict, track_id):
-                # Jeda 10 menit (600 detik) nunggu lagu + berita kelar di radio
-                print(f"[INFO] Menunggu 10 menit sebelum menghapus kaset ID: {track_id}")
-                time.sleep(600) 
+                # Jeda 5 menit (300 detik) nunggu lagu + berita kelar di radio
+                print(f"[INFO] Menunggu 5 menit sebelum menghapus kaset ID: {track_id}")
+                time.sleep(300)
                 
                 url_del = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/delete"
                 sesi_bg = requests.Session()
