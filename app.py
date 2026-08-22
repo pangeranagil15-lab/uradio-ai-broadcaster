@@ -61,7 +61,7 @@ USERS = {
         "role": "Narasumber",
         "foto": "sem_haesy.jpg", 
         "voice_id": "ry35IfPkrTNFBXaZzaPc",
-        "prompt_system": "Ubah info berikut jadi naskah pernyataan/opini lisan (800-1500 huruf). Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. Wajib tutup dengan kalimat: 'Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+        "prompt_system": "Ubah info berikut jadi naskah pernyataan/opini lisan (800-1500 huruf). Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya LAMBAT dan BERPENEKANAN dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
     },
     "4444": {
         "nama": "Ferry Juliantono",
@@ -69,7 +69,7 @@ USERS = {
         "jabatan": "Menteri Koperasi",
         "foto": "ferry.jpg", 
         "voice_id": "3lMUf1sc9Hxjzmjo8tSX",
-        "prompt_system": "Ubah info berikut jadi naskah pernyataan lisan (800-1500 huruf) sebagai Menteri Koperasi. Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. Wajib tutup dengan kalimat: 'Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+        "prompt_system": "Ubah info berikut jadi naskah pernyataan lisan (800-1500 huruf) sebagai Menteri Koperasi. Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya LAMBAT dan BERPENEKANAN dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
     },
     "5555": {
         "nama": "Hamdan Zulva",
@@ -77,7 +77,7 @@ USERS = {
         "jabatan": "Pakar Hukum Tata Negara",
         "foto": "hamdan.jpg", 
         "voice_id": "JZGBWv46XHdJuPtv4WuY",
-        "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, berbobot tajam, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya SANGAT LAMBAT dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+        "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, agak lambat (slow), berbobot tajam, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya SANGAT LAMBAT dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
     }
 
 if 'logged_in' not in st.session_state:
