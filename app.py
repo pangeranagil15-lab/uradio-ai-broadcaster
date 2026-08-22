@@ -79,6 +79,7 @@ USERS = {
         "voice_id": "JZGBWv46XHdJuPtv4WuY",
         "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, agak lambat (slow), berbobot tajam, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya SANGAT LAMBAT dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
     }
+}
 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -87,7 +88,8 @@ if 'logged_in' not in st.session_state:
 if 'jumlah_jadwal' not in st.session_state:
     st.session_state.jumlah_jadwal = 1
 
-DB_FILE = "database_berita.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(BASE_DIR, "database_berita.json")
 
 def load_db():
     if os.path.exists(DB_FILE):
@@ -121,8 +123,6 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{suara_bersih}"
         headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": kunci_bersih}
-        
-        # Stability sedikit diturunkan ke 0.45 biar intonasinya lebih alami dan bervariasi
         data = {"text": teks_audio, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.45, "similarity_boost": 0.75}}
         
         res = requests.post(url, json=data, headers=headers)
@@ -249,7 +249,7 @@ else:
                             # PROMPT DINAMIS BERDASARKAN DATABASE USER
                             prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
                             
-                            model = genai.GenerativeModel("gemini-3.6-flash") # Tetap pakai nama model versi lu
+                            model = genai.GenerativeModel("gemini-3.6-flash")
                             response = model.generate_content(prompt)
                             
                             db["status"] = "menunggu_validasi"
@@ -262,6 +262,8 @@ else:
                             
                             st.success("Terkirim ke meja Agustian!")
                             st.balloons()
+                            time.sleep(2)
+                            st.rerun()
                         except Exception as e: st.error(f"Error AI: {e}")
 
         if db["status"] == "approved":
