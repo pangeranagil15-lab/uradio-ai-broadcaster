@@ -7,6 +7,7 @@ import requests
 import threading
 import time
 import datetime
+import ftplib  # <-- Pasukan Khusus Tukang Sapu
 
 # --- ZONA WAKTU INDONESIA (WIB) ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
@@ -143,11 +144,13 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
         }
         
+        # 1. Login Web MediaCP (Untuk Upload Cepat)
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
         data_login = {"username": st.secrets["WEB_USER"], "user_password": st.secrets["WEB_PASS"], "language": "default"}
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
+        # 2. Eksekusi Upload
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -161,40 +164,43 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         print(f"[DEBUG RAW RESPONSE UPLOAD]: {res.text[:100]}...", flush=True)
 
         if res.status_code == 200:
-            def hapus_background(cookies_dict, track_id):
-                print(f"[INFO] Menunggu timer 10 menit (30s) sebelum menghapus ID: {track_id}", flush=True)
-                time.sleep(30)
+            
+            # === TUKANG SAPU JALUR FTP (BYPASS TRACK ID) ===
+            def hapus_background_ftp(nama_target):
+                print(f"[INFO] Tukang Sapu FTP aktif! Menunggu 30 detik sebelum menghapus: {nama_target}", flush=True)
+                time.sleep(30) # Ganti ke 600 nanti kalau udah rilis
                 
-                url_del = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/delete"
-                sesi_bg = requests.Session()
-                sesi_bg.cookies.update(cookies_dict)
                 try:
-                    res_del = sesi_bg.post(url_del, data={'tracks[0]': track_id}, headers=headers)
-                    print(f"[SUKSES] Kaset musnah! Respon: {res_del.text[:50]}", flush=True)
+                    ftp = ftplib.FTP()
+                    ftp.connect("mediacp-eu1.arenastreaming.com", 2121)
+                    ftp.login("ftp_6", "3yAdS4dG@3bZ")
+                    ftp.set_pasv(True) # Biar koneksi stabil di VPS
+                    
+                    # MediaCP biasanya membedakan root FTP. Kita coba masuk folder Berita
+                    try:
+                        ftp.cwd('media/Berita')
+                    except:
+                        try:
+                            ftp.cwd('Berita')
+                        except:
+                            pass
+                    
+                    # Hapus file berdasarkan namanya langsung!
+                    ftp.delete(nama_target)
+                    ftp.quit()
+                    print(f"[SUKSES] Kaset {nama_target} rata dengan tanah via FTP!", flush=True)
+                    
                 except Exception as e:
-                    print(f"[ERROR] Gagal hapus ID {track_id}: {e}", flush=True)
+                    print(f"[ERROR] Tukang Sapu FTP Gagal: {e}", flush=True)
 
-            match = re.search(r'"id":\s*(\d+)|"track_id":\s*(\d+)|tracks%5B0%5D=(\d+)|(\d+)', res.text)
-            t_id = None
-            try:
-                data_json = res.json()
-                if 'files' in data_json and len(data_json['files']) > 0:
-                    t_id = data_json['files'][0].get('id') or data_json['files'][0].get('track_id')
-                else: t_id = data_json.get('id')
-            except: pass
-
-            if not t_id and match: t_id = next((g for g in match.groups() if g is not None), None)
-                
-            if t_id:
-                print(f"[INFO] Upload sukses (ID: {t_id}). Tukang Sapu diaktifkan!", flush=True)
-                t = threading.Thread(target=hapus_background, args=(sesi.cookies.get_dict(), t_id))
-                t.start()
-            else:
-                print("[WARNING] Track ID tidak ditemukan!", flush=True)
+            # Lepas Tukang Sapu (Berjalan di background)
+            t = threading.Thread(target=hapus_background_ftp, args=(nama_file_tujuan,))
+            t.start()
+            
             return True
         else: return False
     except Exception as e:
-        print(f"Error Jalur Bypass: {e}")
+        print(f"Error Upload: {e}")
         return False
 
 # ==========================================
@@ -246,7 +252,6 @@ else:
                             gemini_key = st.secrets["GEMINI_API_KEY"]
                             genai.configure(api_key=gemini_key)
                             
-                            # PROMPT DINAMIS BERDASARKAN DATABASE USER
                             prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
                             
                             model = genai.GenerativeModel("gemini-3.6-flash")
@@ -278,7 +283,6 @@ else:
             
         elif db["status"] == "menunggu_validasi":
             
-            # Label pengingat buat Pemred: Ini berita penyiar atau opini narasumber
             st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Unknown')} ({db.get('role_penulis', 'Penyiar')})")
             
             with st.container(border=True):
