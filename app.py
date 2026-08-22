@@ -8,6 +8,9 @@ import threading
 import time
 import datetime
 
+# --- ZONA WAKTU INDONESIA (WIB) ---
+WIB = datetime.timezone(datetime.timedelta(hours=7))
+
 # ==========================================
 # 1. SETUP TEMA & HALAMAN
 # ==========================================
@@ -57,7 +60,6 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_data = None
 
-# Untuk dynamic jumlah jam jadwal
 if 'jumlah_jadwal' not in st.session_state:
     st.session_state.jumlah_jadwal = 1
 
@@ -83,7 +85,6 @@ def bersihkan_untuk_audio(teks):
     teks = re.sub(r'^(Berikut|Ini).*?:\n', '', teks, flags=re.IGNORECASE)
     return teks.strip()
 
-# Fungsi produksi MP3 biar kodingan rapi
 def produksi_audio_elevenlabs(teks_audio, voice_id):
     try:
         elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY", "")
@@ -109,7 +110,6 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         st.error(f"Error Sistem ElevenLabs: {e}")
         return False
 
-# Fungsi Kurir & Tukang Sapu
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
     try:
         sesi = requests.Session()
@@ -117,13 +117,11 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
         }
         
-        # LOGIN
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
         data_login = {"username": st.secrets["WEB_USER"], "user_password": st.secrets["WEB_PASS"], "language": "default"}
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # UPLOAD
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -240,7 +238,7 @@ else:
             st.info("✅ Naskah terakhirmu sudah diproduksi / dijadwalkan.")
 
     # ==========================
-    # 6. MEJA PEMRED (FITUR JADWAL CUSTOM)
+    # 6. MEJA PEMRED
     # ==========================
     elif user["role"] == "Pemimpin Redaksi":
         if db["status"] == "kosong":
@@ -274,14 +272,14 @@ else:
                 st.caption("Buat jadwal tayang. Kaset akan diupload dan dihapus otomatis per sesi.")
                 
                 jadwal_list = []
-                cols = st.columns(3) # Tampil 3 kotak per baris biar rapi
+                cols = st.columns(3) 
                 for i in range(st.session_state.jumlah_jadwal):
                     with cols[i % 3]:
-                        waktu_awal = (datetime.datetime.now() + datetime.timedelta(minutes=5 * (i+1))).time()
+                        # Pake zona waktu WIB!
+                        waktu_awal = (datetime.datetime.now(WIB) + datetime.timedelta(minutes=5 * (i+1))).time()
                         t = st.time_input(f"Jam Tayang {i+1}", value=waktu_awal, key=f"waktu_{i}")
                         jadwal_list.append(t)
                 
-                # Tombol nambah slot jam
                 if st.button("➕ Tambah Jam Tayang"):
                     st.session_state.jumlah_jadwal += 1
                     st.rerun()
@@ -294,22 +292,23 @@ else:
                             db["naskah"] = teks_bersih
                             save_db(db)
                             
-                            # Logika Kurir Hit & Run
                             def kurir_ninja(target_waktu, urutan):
-                                sekarang = datetime.datetime.now()
-                                waktu_target = datetime.datetime.combine(datetime.date.today(), target_waktu)
+                                # Paksa perhitungan pake zona waktu WIB
+                                sekarang = datetime.datetime.now(WIB)
+                                waktu_target = datetime.datetime.combine(sekarang.date(), target_waktu)
+                                waktu_target = waktu_target.replace(tzinfo=WIB)
+                                
                                 if waktu_target < sekarang:
                                     waktu_target += datetime.timedelta(days=1)
                                 jeda = (waktu_target - sekarang).total_seconds()
                                 
                                 if jeda > 5:
-                                    print(f"[INFO] Kurir {urutan} standby! OTW MediaCP {int(jeda)} detik lagi.", flush=True)
+                                    print(f"[INFO] Kurir {urutan} standby! OTW MediaCP {int(jeda)} detik lagi (Target: {waktu_target.strftime('%H:%M:%S')} WIB).", flush=True)
                                     time.sleep(jeda)
                                     
-                                print(f"[INFO] JAM TAYANG! Kurir {urutan} melempar kaset ke Radio!", flush=True)
+                                print(f"[INFO] JAM TAYANG WIB! Kurir {urutan} melempar kaset ke Radio!", flush=True)
                                 kirim_ke_radio("berita_siaran.mp3", f"berita_jadwal_{urutan}.mp3")
 
-                            # Spawn kurir sebanyak jam yang dibikin
                             for i, jam_tayang in enumerate(jadwal_list):
                                 t_kurir = threading.Thread(target=kurir_ninja, args=(jam_tayang, i+1))
                                 t_kurir.start()
@@ -321,7 +320,7 @@ else:
                 if st.button("❌ Tolak Naskah", type="secondary", use_container_width=True):
                     db["status"] = "kosong"
                     db["info_mentah"] = ""
-                    st.session_state.jumlah_jadwal = 1 # Reset slot jam
+                    st.session_state.jumlah_jadwal = 1
                     save_db(db)
                     st.rerun()
                         
