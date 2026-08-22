@@ -46,13 +46,38 @@ USERS = {
         "nama": "Agustian",
         "role": "Pemimpin Redaksi",
         "foto": "agustian.jpg", 
-        "voice_id": "" 
+        "voice_id": "",
+        "prompt_system": "" 
     },
     "2222": {
         "nama": "Ki Sandi Suryadinata",
         "role": "Penyiar",
         "foto": "sandi.jpg", 
-        "voice_id": "wxuHKpeHPOQlfryZit7t" 
+        "voice_id": "wxuHKpeHPOQlfryZit7t",
+        "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya santai, akrab, lisan. Buka dengan: 'Hai Derr.' Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
+    },
+    "3333": {
+        "nama": "Sem Haesy",
+        "role": "Narasumber",
+        "foto": "sem_haesy.jpg", 
+        "voice_id": "ry35IfPkrTNFBXaZzaPc",
+        "prompt_system": "Ubah info berikut jadi naskah pernyataan/opini lisan (800-1500 huruf). Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. Wajib tutup dengan kalimat: 'Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+    },
+    "4444": {
+        "nama": "Ferry Juliantono",
+        "role": "Narasumber",
+        "jabatan": "Menteri Koperasi",
+        "foto": "ferry.jpg", 
+        "voice_id": "3lMUf1sc9Hxjzmjo8tSX",
+        "prompt_system": "Ubah info berikut jadi naskah pernyataan lisan (800-1500 huruf) sebagai Menteri Koperasi. Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. Wajib tutup dengan kalimat: 'Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+    },
+    "5555": {
+        "nama": "Hamdan Zulva",
+        "role": "Narasumber",
+        "jabatan": "Pakar Hukum Tata Negara",
+        "foto": "hamdan.jpg", 
+        "voice_id": "JZGBWv46XHdJuPtv4WuY",
+        "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, agak lambat (slow), berbobot tajam, dan berwibawa. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
     }
 }
 
@@ -68,7 +93,7 @@ DB_FILE = "database_berita.json"
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f: return json.load(f)
-    return {"status": "kosong", "info_mentah": "", "naskah": "", "penulis": "", "voice_id_penulis": ""}
+    return {"status": "kosong", "info_mentah": "", "naskah": "", "penulis": "", "voice_id_penulis": "", "role_penulis": ""}
 
 def save_db(data):
     with open(DB_FILE, "w") as f: json.dump(data, f)
@@ -97,7 +122,9 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{suara_bersih}"
         headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": kunci_bersih}
-        data = {"text": teks_audio, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}
+        
+        # Stability sedikit diturunkan ke 0.45 biar intonasinya lebih alami dan bervariasi
+        data = {"text": teks_audio, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.45, "similarity_boost": 0.75}}
         
         res = requests.post(url, json=data, headers=headers)
         if res.status_code == 200:
@@ -205,28 +232,32 @@ else:
     st.title(f"🎙️ Meja {user['role']}")
     
     # ==========================
-    # 5. MEJA PENYIAR
+    # 5. MEJA KONTRIBUTOR (PENYIAR & NARASUMBER)
     # ==========================
-    if user["role"] == "Penyiar":
+    if user["role"] in ["Penyiar", "Narasumber"]:
         with st.container(border=True):
-            st.subheader("📝 Draft Berita Baru")
-            info_mentah = st.text_area("Informasi Mentah:", value=db.get("info_mentah", ""), height=150)
+            st.subheader(f"📝 Draft Naskah Baru - {user['nama']}")
+            info_mentah = st.text_area("Informasi Mentah / Poin Statement:", value=db.get("info_mentah", ""), height=150)
             
             if st.button("🚀 Kirim ke Pemred", use_container_width=True):
-                if not info_mentah.strip(): st.warning("Isi berita dulu!")
+                if not info_mentah.strip(): st.warning("Isi informasi dulu!")
                 else:
-                    with st.spinner("AI Meracik Naskah..."):
+                    with st.spinner("AI Meracik Naskah Sesuai Karakter..."):
                         try:
                             gemini_key = st.secrets["GEMINI_API_KEY"]
                             genai.configure(api_key=gemini_key)
-                            prompt = f"Ubah jadi naskah radio lisan (800-1500 huruf). Buka: 'Hai Derr.' Tutup: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown.\n\n{info_mentah}"
-                            model = genai.GenerativeModel("gemini-3.6-flash")
+                            
+                            # PROMPT DINAMIS BERDASARKAN DATABASE USER
+                            prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
+                            
+                            model = genai.GenerativeModel("gemini-3.6-flash") # Tetap pakai nama model versi lu
                             response = model.generate_content(prompt)
                             
                             db["status"] = "menunggu_validasi"
                             db["info_mentah"] = info_mentah
                             db["naskah"] = bersihkan_untuk_audio(response.text)
                             db["penulis"] = user["nama"] 
+                            db["role_penulis"] = user["role"]
                             db["voice_id_penulis"] = user["voice_id"] 
                             save_db(db)
                             
@@ -245,7 +276,9 @@ else:
             st.info("Belum ada draft masuk.")
             
         elif db["status"] == "menunggu_validasi":
-            st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Penyiar')}")
+            
+            # Label pengingat buat Pemred: Ini berita penyiar atau opini narasumber
+            st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Unknown')} ({db.get('role_penulis', 'Penyiar')})")
             
             with st.container(border=True):
                 naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=200)
@@ -254,7 +287,7 @@ else:
                 # JALUR 1: EKSPRES / BREAKING NEWS
                 st.divider()
                 st.markdown("### 🚀 JALUR EKSPRES (BREAKING NEWS)")
-                st.caption("Berita akan diproduksi dan langsung mengudara ke radio saat ini juga.")
+                st.caption("Kaset akan diproduksi dan langsung mengudara ke radio saat ini juga.")
                 if st.button("🔥 Siarkan Sekarang", use_container_width=True):
                     with st.spinner("Memproduksi Audio & Menerobos ke Radio..."):
                         teks_bersih = bersihkan_untuk_audio(naskah_edit)
@@ -275,7 +308,6 @@ else:
                 cols = st.columns(3) 
                 for i in range(st.session_state.jumlah_jadwal):
                     with cols[i % 3]:
-                        # Pake zona waktu WIB!
                         waktu_awal = (datetime.datetime.now(WIB) + datetime.timedelta(minutes=5 * (i+1))).time()
                         t = st.time_input(f"Jam Tayang {i+1}", value=waktu_awal, key=f"waktu_{i}")
                         jadwal_list.append(t)
@@ -293,7 +325,6 @@ else:
                             save_db(db)
                             
                             def kurir_ninja(target_waktu, urutan):
-                                # Paksa perhitungan pake zona waktu WIB
                                 sekarang = datetime.datetime.now(WIB)
                                 waktu_target = datetime.datetime.combine(sekarang.date(), target_waktu)
                                 waktu_target = waktu_target.replace(tzinfo=WIB)
