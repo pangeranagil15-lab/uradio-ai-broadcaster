@@ -92,7 +92,8 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         }
         
         # --- PROSES 1: LOGIN DIAM-DIAM ---
-        url_login = "https://mediacp-eu1.arenastreaming.com:2020/login"
+        url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
+        
         data_login = {
             "username": st.secrets["WEB_USER"], 
             "password": st.secrets["WEB_PASS"]
