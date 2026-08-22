@@ -214,7 +214,7 @@ else:
                                         save_db(db)
                                         
                                         # Kirim FTP
-                                        kirim_sukses = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru.mp3")
+                                        kirim_sukses = kirim_ke_radio("berita_siaran.mp3", "Playlist1/berita_terbaru.mp3")
                                         if kirim_sukses:
                                             st.toast('Siaaap! Audio langsung masuk MediaCP!', icon='📡')
                                         else:
