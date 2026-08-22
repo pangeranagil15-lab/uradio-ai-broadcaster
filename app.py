@@ -7,7 +7,6 @@ import requests
 import threading
 import time
 import datetime
-import ftplib  # <-- Pasukan Khusus Tukang Sapu
 
 # --- ZONA WAKTU INDONESIA (WIB) ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
@@ -113,6 +112,11 @@ def bersihkan_untuk_audio(teks):
     return teks.strip()
 
 def produksi_audio_elevenlabs(teks_audio, voice_id):
+    # MODE HEMAT KUOTA: Cek file lama dulu biar gausah generate AI buat ngetes doang
+    if os.path.exists("berita_siaran.mp3"):
+        print("[TEST MODE] Memakai kaset berita_siaran.mp3 yang sudah ada di folder. Hemat kuota!", flush=True)
+        return True
+        
     try:
         elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY", "")
         if not elevenlabs_key or not voice_id:
@@ -144,7 +148,7 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
         }
         
-        # 1. Login Web MediaCP (Untuk Upload Cepat)
+        # 1. Login Web MediaCP 
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
         data_login = {"username": st.secrets["WEB_USER"], "user_password": st.secrets["WEB_PASS"], "language": "default"}
         sesi.get(url_login, headers=headers)
@@ -161,42 +165,61 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             files = {'track': (nama_file_tujuan, f, 'audio/mpeg')}
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
             
-        print(f"[DEBUG RAW RESPONSE UPLOAD]: {res.text[:100]}...", flush=True)
+        print(f"[DEBUG FULL UPLOAD]: {res.text}", flush=True) # Sengaja diprint full tanpa dipotong
 
         if res.status_code == 200:
-            
-            # === TUKANG SAPU JALUR FTP (BYPASS TRACK ID) ===
-            def hapus_background_ftp(nama_target):
-                print(f"[INFO] Tukang Sapu FTP aktif! Menunggu 30 detik sebelum menghapus: {nama_target}", flush=True)
-                time.sleep(30) # Ganti ke 600 nanti kalau udah rilis
-                
-                try:
-                    ftp = ftplib.FTP()
-                    ftp.connect("mediacp-eu1.arenastreaming.com", 2121)
-                    ftp.login("ftp_6", "3yAdS4dG@3bZ")
-                    ftp.set_pasv(True) # Biar koneksi stabil di VPS
-                    
-                    # MediaCP biasanya membedakan root FTP. Kita coba masuk folder Berita
-                    try:
-                        ftp.cwd('media/Berita')
-                    except:
-                        try:
-                            ftp.cwd('Berita')
-                        except:
-                            pass
-                    
-                    # Hapus file berdasarkan namanya langsung!
-                    ftp.delete(nama_target)
-                    ftp.quit()
-                    print(f"[SUKSES] Kaset {nama_target} rata dengan tanah via FTP!", flush=True)
-                    
-                except Exception as e:
-                    print(f"[ERROR] Tukang Sapu FTP Gagal: {e}", flush=True)
+            try:
+                data_json = res.json()
+            except:
+                data_json = {}
 
-            # Lepas Tukang Sapu (Berjalan di background)
-            t = threading.Thread(target=hapus_background_ftp, args=(nama_file_tujuan,))
-            t.start()
+            # RADAR PENCARI ID (Menggali JSON sampai nemu ID nya)
+            def cari_id(data):
+                if isinstance(data, dict):
+                    if 'id' in data and str(data['id']).isdigit(): return str(data['id'])
+                    if 'track_id' in data and str(data['track_id']).isdigit(): return str(data['track_id'])
+                    for k, v in data.items():
+                        hasil = cari_id(v)
+                        if hasil: return hasil
+                elif isinstance(data, list):
+                    for item in data:
+                        hasil = cari_id(item)
+                        if hasil: return hasil
+                return None
+
+            t_id = cari_id(data_json)
             
+            if t_id:
+                print(f"[INFO] Upload sukses. Track ID tertangkap: {t_id}. Tukang Sapu API siap!", flush=True)
+                
+                # === TUKANG SAPU JALUR API ASLI ===
+                def hapus_background_api(cookies_dict, track_id):
+                    print(f"[INFO] Menunggu timer 30 detik sebelum menghapus ID: {track_id}", flush=True)
+                    time.sleep(30)
+                    
+                    try:
+                        url_del = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/delete"
+                        sesi_del = requests.Session()
+                        sesi_del.cookies.update(cookies_dict)
+                        
+                        head_del = headers.copy()
+                        head_del['Content-Type'] = 'application/x-www-form-urlencoded'
+                        head_del['Origin'] = 'https://mediacp-eu1.arenastreaming.com:2020'
+                        head_del['Referer'] = 'https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8'
+                        
+                        # Payload persis seperti cURL intelijen lu: tracks[0]=680
+                        data_del = {'tracks[0]': track_id}
+                        
+                        res_del = sesi_del.post(url_del, data=data_del, headers=head_del)
+                        print(f"[SUKSES] Kaset {track_id} rata dan hilang dari layar MediaCP! Respon: {res_del.text[:50]}", flush=True)
+                    except Exception as e:
+                        print(f"[ERROR] Tukang Sapu API Gagal: {e}", flush=True)
+
+                t = threading.Thread(target=hapus_background_api, args=(sesi.cookies.get_dict(), t_id))
+                t.start()
+            else:
+                print("[WARNING] Radar gagal nemuin Track ID! Cek log DEBUG FULL UPLOAD di atas.", flush=True)
+
             return True
         else: return False
     except Exception as e:
@@ -289,7 +312,6 @@ else:
                 naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=200)
                 suara_yg_dipakai = db.get("voice_id_penulis", "")
                 
-                # JALUR 1: EKSPRES / BREAKING NEWS
                 st.divider()
                 st.markdown("### 🚀 JALUR EKSPRES (BREAKING NEWS)")
                 st.caption("Kaset akan diproduksi dan langsung mengudara ke radio saat ini juga.")
@@ -304,7 +326,6 @@ else:
                             st.toast('Siaaap! Audio langsung memotong lagu di MediaCP!', icon='📡')
                             st.rerun()
 
-                # JALUR 2: TERJADWAL
                 st.divider()
                 st.markdown("### 🗓️ JALUR TERJADWAL (CUSTOM SCHEDULE)")
                 st.caption("Buat jadwal tayang. Kaset akan diupload dan dihapus otomatis per sesi.")
