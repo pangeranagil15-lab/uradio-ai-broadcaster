@@ -78,18 +78,56 @@ def bersihkan_untuk_audio(teks):
     return teks.strip()
 
 # --- KURIR FTP ---
-def kirim_ke_radio(nama_file_lokal, nama_file_di_server):
+def kirim_ke_radio(file_lokal, nama_file_tujuan):
+    import requests
+    import streamlit as st
+    
     try:
-        ftp = ftplib.FTP()
-        ftp.connect(st.secrets["FTP_HOST"], int(st.secrets["FTP_PORT"]))
-        ftp.login(st.secrets["FTP_USER"], st.secrets["FTP_PASS"])
-        ftp.set_pasv(True) # Passive mode agar tidak diblokir
-        with open(nama_file_lokal, 'rb') as f:
-            ftp.storbinary(f'STOR {nama_file_di_server}', f)
-        ftp.quit()
-        return True
+        # Buka browser virtual (session) biar cookie login kesimpan otomatis
+        sesi = requests.Session()
+        
+        # Nyamar pake browser Chrome PC persis kayak cURL lu
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
+        }
+        
+        # --- PROSES 1: LOGIN DIAM-DIAM ---
+        url_login = "https://mediacp-eu1.arenastreaming.com:2020/login"
+        data_login = {
+            "username": st.secrets["WEB_USER"], 
+            "password": st.secrets["WEB_PASS"]
+        }
+        
+        # Pancing buka halaman login buat narik Cookie awal
+        sesi.get(url_login, headers=headers)
+        # Tembak form loginnya
+        sesi.post(url_login, data=data_login, headers=headers)
+        
+        # --- PROSES 2: UPLOAD LANGSUNG KE PLAYLIST1 ---
+        url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
+        
+        # Targetkan folder tujuan (Rahasianya ada di sini)
+        payload = {'path': '/Playlist1'}
+        
+        # Tambahin referer biar dikira ngeklik dari dalam web
+        headers_upload = headers.copy()
+        headers_upload['Origin'] = 'https://mediacp-eu1.arenastreaming.com:2020'
+        headers_upload['Referer'] = 'https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8'
+        
+        # Siapin dan kirim file
+        with open(file_lokal, 'rb') as f:
+            # Kata 'track' diambil dari form-data cURL lu
+            files = {'track': (nama_file_tujuan, f, 'audio/mpeg')}
+            res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
+            
+        # Kalau statusnya 200, artinya sukses nge-bypass database MediaCP!
+        if res.status_code == 200:
+            return True
+        else:
+            return False
+            
     except Exception as e:
-        st.error(f"Gagal konek FTP: {e}")
+        print(f"Error Jalur Bypass: {e}")
         return False
 
 # ==========================================
@@ -214,7 +252,7 @@ else:
                                         save_db(db)
                                         
                                         # Kirim FTP
-                                        kirim_sukses = kirim_ke_radio("berita_siaran.mp3", "Playlist1/berita_terbaru.mp3")
+                                        kirim_sukses = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru.mp3")
                                         if kirim_sukses:
                                             st.toast('Siaaap! Audio langsung masuk MediaCP!', icon='📡')
                                         else:
