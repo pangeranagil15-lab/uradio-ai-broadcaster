@@ -162,8 +162,8 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
 
         if res.status_code == 200:
             def hapus_background(cookies_dict, track_id):
-                print(f"[INFO] Menunggu timer 10 menit (600s) sebelum menghapus ID: {track_id}", flush=True)
-                time.sleep(600)
+                print(f"[INFO] Menunggu timer 10 menit (30s) sebelum menghapus ID: {track_id}", flush=True)
+                time.sleep(30)
                 
                 url_del = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/delete"
                 sesi_bg = requests.Session()
