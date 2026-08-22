@@ -77,9 +77,8 @@ USERS = {
         "jabatan": "Pakar Hukum Tata Negara",
         "foto": "hamdan.jpg", 
         "voice_id": "JZGBWv46XHdJuPtv4WuY",
-        "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, agak lambat (slow), berbobot tajam, dan berwibawa. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+        "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, berbobot tajam, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya SANGAT LAMBAT dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
     }
-}
 
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
