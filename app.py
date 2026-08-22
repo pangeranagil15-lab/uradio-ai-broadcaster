@@ -7,6 +7,7 @@ import requests
 import threading
 import time
 import datetime
+import ftplib # Pasukan sabotase FTP
 
 # --- ZONA WAKTU INDONESIA (WIB) ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
@@ -154,7 +155,7 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # 2. Eksekusi Upload
+        # 2. Eksekusi Upload (Menerobos ke Radio)
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -164,61 +165,44 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         with open(file_lokal, 'rb') as f:
             files = {'track': (nama_file_tujuan, f, 'audio/mpeg')}
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
-            
-        print(f"[DEBUG FULL UPLOAD]: {res.text}", flush=True) # Sengaja diprint full tanpa dipotong
 
         if res.status_code == 200:
-            try:
-                data_json = res.json()
-            except:
-                data_json = {}
-
-            # RADAR PENCARI ID (Menggali JSON sampai nemu ID nya)
-            def cari_id(data):
-                if isinstance(data, dict):
-                    if 'id' in data and str(data['id']).isdigit(): return str(data['id'])
-                    if 'track_id' in data and str(data['track_id']).isdigit(): return str(data['track_id'])
-                    for k, v in data.items():
-                        hasil = cari_id(v)
-                        if hasil: return hasil
-                elif isinstance(data, list):
-                    for item in data:
-                        hasil = cari_id(item)
-                        if hasil: return hasil
-                return None
-
-            t_id = cari_id(data_json)
+            print("[INFO] Upload ke Radio Berhasil. Tukang Sapu Barbar bersiap!", flush=True)
             
-            if t_id:
-                print(f"[INFO] Upload sukses. Track ID tertangkap: {t_id}. Tukang Sapu API siap!", flush=True)
+            # === TUKANG SAPU JALUR BARBAR (FTP OVERWRITE) ===
+            def hapus_background_barbar(nama_target):
+                print(f"[INFO] Nunggu timer 30 detik sebelum menyabotase: {nama_target}", flush=True)
+                time.sleep(30)
                 
-                # === TUKANG SAPU JALUR API ASLI ===
-                def hapus_background_api(cookies_dict, track_id):
-                    print(f"[INFO] Menunggu timer 30 detik sebelum menghapus ID: {track_id}", flush=True)
-                    time.sleep(30)
+                try:
+                    # 1. Buat file MP3 dummy (isi angin/kosong)
+                    with open("kaset_kosong.mp3", "wb") as f:
+                        f.write(b'\xFF\xE3\x18\xC4\x00\x00\x00\x00\x00\x00\x00\x00') # Byte acak biar dibaca mp3 kosong
                     
-                    try:
-                        url_del = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/delete"
-                        sesi_del = requests.Session()
-                        sesi_del.cookies.update(cookies_dict)
+                    # 2. Susup FTP
+                    ftp = ftplib.FTP()
+                    ftp.connect("mediacp-eu1.arenastreaming.com", 2121)
+                    ftp.login("ftp_6", "3yAdS4dG@3bZ")
+                    ftp.set_pasv(True)
+                    
+                    try: ftp.cwd('media/Berita')
+                    except: 
+                        try: ftp.cwd('Berita')
+                        except: pass
+                    
+                    # 3. Timpa kaset asli dengan kaset dummy
+                    with open("kaset_kosong.mp3", "rb") as f:
+                        ftp.storbinary(f'STOR {nama_target}', f)
                         
-                        head_del = headers.copy()
-                        head_del['Content-Type'] = 'application/x-www-form-urlencoded'
-                        head_del['Origin'] = 'https://mediacp-eu1.arenastreaming.com:2020'
-                        head_del['Referer'] = 'https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8'
-                        
-                        # Payload persis seperti cURL intelijen lu: tracks[0]=680
-                        data_del = {'tracks[0]': track_id}
-                        
-                        res_del = sesi_del.post(url_del, data=data_del, headers=head_del)
-                        print(f"[SUKSES] Kaset {track_id} rata dan hilang dari layar MediaCP! Respon: {res_del.text[:50]}", flush=True)
-                    except Exception as e:
-                        print(f"[ERROR] Tukang Sapu API Gagal: {e}", flush=True)
+                    ftp.quit()
+                    print(f"[SUKSES] Kaset {nama_target} berhasil disabotase jadi kaset kosong!", flush=True)
+                    
+                except Exception as e:
+                    print(f"[ERROR] Tukang Sapu Barbar Gagal: {e}", flush=True)
 
-                t = threading.Thread(target=hapus_background_api, args=(sesi.cookies.get_dict(), t_id))
-                t.start()
-            else:
-                print("[WARNING] Radar gagal nemuin Track ID! Cek log DEBUG FULL UPLOAD di atas.", flush=True)
+            # Eksekusi sabotase di balik layar
+            t = threading.Thread(target=hapus_background_barbar, args=(nama_file_tujuan,))
+            t.start()
 
             return True
         else: return False
@@ -328,7 +312,7 @@ else:
 
                 st.divider()
                 st.markdown("### 🗓️ JALUR TERJADWAL (CUSTOM SCHEDULE)")
-                st.caption("Buat jadwal tayang. Kaset akan diupload dan dihapus otomatis per sesi.")
+                st.caption("Buat jadwal tayang. Kaset akan diupload dan disabotase otomatis per sesi.")
                 
                 jadwal_list = []
                 cols = st.columns(3) 
