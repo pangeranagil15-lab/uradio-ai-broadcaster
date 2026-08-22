@@ -5,6 +5,8 @@ import json
 import os
 import requests
 import ftplib
+import threading
+import time
 
 # ==========================================
 # 1. SETUP TEMA & HALAMAN
@@ -77,11 +79,8 @@ def bersihkan_untuk_audio(teks):
     teks = re.sub(r'^(Berikut|Ini).*?:\n', '', teks, flags=re.IGNORECASE)
     return teks.strip()
 
-# --- KURIR FTP ---
+# --- KURIR FTP & TUKANG SAPU ---
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
-    import requests
-    import streamlit as st
-    
     try:
         # Buka browser virtual (session) biar cookie login kesimpan otomatis
         sesi = requests.Session()
@@ -105,7 +104,7 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         # Tembak form loginnya
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # --- PROSES 2: UPLOAD LANGSUNG KE PLAYLIST1 ---
+        # --- PROSES 2: UPLOAD LANGSUNG KE FOLDER JINGLES ---
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         
         # Targetkan folder tujuan (Rahasianya ada di sini)
@@ -124,6 +123,43 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             
         # Kalau statusnya 200, artinya sukses nge-bypass database MediaCP!
         if res.status_code == 200:
+            
+            # --- PROSES 3: TUKANG SAPU DI BALIK LAYAR ---
+            def hapus_background(cookies_dict, track_id):
+                # Jeda 10 menit (600 detik) nunggu lagu + berita kelar di radio
+                print(f"[INFO] Menunggu 10 menit sebelum menghapus kaset ID: {track_id}")
+                time.sleep(600) 
+                
+                url_del = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/delete"
+                sesi_bg = requests.Session()
+                sesi_bg.cookies.update(cookies_dict)
+                
+                # Tembak payload hapus sesuai cURL lu
+                try:
+                    sesi_bg.post(url_del, data={'tracks[0]': track_id}, headers=headers)
+                    print(f"[SUKSES] Kaset berita ID {track_id} otomatis musnah dari server!")
+                except Exception as e:
+                    print(f"[ERROR] Gagal hapus ID {track_id}: {e}")
+
+            # Trik nangkep Track ID dari response JSON web MediaCP
+            try:
+                data_json = res.json()
+                t_id = None
+                
+                if 'files' in data_json and len(data_json['files']) > 0:
+                    t_id = data_json['files'][0].get('id') or data_json['files'][0].get('track_id')
+                else:
+                    t_id = data_json.get('id')
+                    
+                if t_id:
+                    # Kalau dapet ID-nya, suruh tukang sapu jalan di background biar web gak loading lama
+                    t = threading.Thread(target=hapus_background, args=(sesi.cookies.get_dict(), t_id))
+                    t.start()
+                else:
+                    print("[WARNING] Track ID tidak ditemukan, Auto-Delete batal jalan.")
+            except Exception as e:
+                print(f"[WARNING] Gagal baca JSON response upload: {e}")
+                
             return True
         else:
             return False
@@ -253,12 +289,12 @@ else:
                                         db["naskah"] = teks_audio
                                         save_db(db)
                                         
-                                        # Kirim FTP
+                                        # Kirim MediaCP
                                         kirim_sukses = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru.mp3")
                                         if kirim_sukses:
-                                            st.toast('Siaaap! Audio langsung masuk MediaCP!', icon='📡')
+                                            st.toast('Siaaap! Audio langsung masuk MediaCP & siap nyelak lagu!', icon='📡')
                                         else:
-                                            st.warning("Gagal FTP karena diblokir Server Cloud. Silakan pakai tombol Download di bawah.")
+                                            st.warning("Gagal Upload ke MediaCP. Silakan pakai tombol Download di bawah.")
                                             
                                         st.rerun()
                                     else: st.error(f"ElevenLabs Error: {res.text}")
@@ -274,10 +310,10 @@ else:
                         st.rerun()
                         
         elif db["status"] == "approved":
-            st.success("✅ Naskah Approved dan Audio siap!")
+            st.success("✅ Naskah Approved dan Audio mengudara di Radio!")
             st.audio("berita_siaran.mp3")
             
-            # --- JALUR DARURAT (DOWNLOAD MANUAL JIKA FTP DIBLOKIR) ---
+            # --- JALUR DARURAT (DOWNLOAD MANUAL) ---
             with open("berita_siaran.mp3", "rb") as file_mp3:
                 st.download_button(
                     label="⬇️ Download Audio (Jalur Manual)",
