@@ -109,7 +109,7 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         
         # Targetkan folder tujuan (Rahasianya ada di sini)
-        payload = {'path': '/Playlist1'}
+        payload = {'path': '/Berita'}
         
         # Tambahin referer biar dikira ngeklik dari dalam web
         headers_upload = headers.copy()
