@@ -171,8 +171,8 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             
             # === TUKANG SAPU JALUR BARBAR (FTP OVERWRITE) ===
             def hapus_background_barbar(nama_target):
-                print(f"[INFO] Nunggu timer 30 detik sebelum menyabotase: {nama_target}", flush=True)
-                time.sleep(30)
+                print(f"[INFO] Nunggu timer 600 detik sebelum menyabotase: {nama_target}", flush=True)
+                time.sleep(600)
                 
                 try:
                     # 1. Buat file MP3 dummy (isi angin/kosong)
