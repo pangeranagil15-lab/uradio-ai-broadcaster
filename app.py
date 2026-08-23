@@ -89,6 +89,11 @@ if 'logged_in' not in st.session_state:
 if 'jumlah_jadwal' not in st.session_state:
     st.session_state.jumlah_jadwal = 1
 
+# === GLOBAL TICKET SYSTEM (Smart Reset Timer) ===
+# Menyimpan waktu (resi) terakhir setiap file diupload, biar Tukang Sapu gak salah hapus.
+if 'upload_tickets' not in st.session_state:
+    st.session_state.upload_tickets = {}
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database_berita.json")
 
@@ -113,7 +118,6 @@ def bersihkan_untuk_audio(teks):
     return teks.strip()
 
 def produksi_audio_elevenlabs(teks_audio, voice_id):
-    # MODE HEMAT KUOTA: Cek file lama dulu biar gausah generate AI buat ngetes doang
     if os.path.exists("berita_siaran.mp3"):
         print("[TEST MODE] Memakai kaset berita_siaran.mp3 yang sudah ada di folder. Hemat kuota!", flush=True)
         return True
@@ -144,6 +148,10 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
 
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
     try:
+        # Bikin nomor tiket (berdasarkan jam:menit:detik saat tombol ditekan)
+        current_ticket = time.time()
+        st.session_state.upload_tickets[nama_file_tujuan] = current_ticket
+
         sesi = requests.Session()
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
@@ -155,7 +163,7 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # 2. Eksekusi Upload (Menerobos ke Radio)
+        # 2. Eksekusi Upload (Timpa atau Buat Baru)
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -167,19 +175,20 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
 
         if res.status_code == 200:
-            print("[INFO] Upload ke Radio Berhasil. Tukang Sapu Barbar bersiap!", flush=True)
+            print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara (Tiket: {current_ticket})! Mengaktifkan Timer...", flush=True)
             
-            # === TUKANG SAPU JALUR BARBAR (FTP OVERWRITE) ===
-            def hapus_background_barbar(nama_target):
-                print(f"[INFO] Nunggu timer 600 detik sebelum menyabotase: {nama_target}", flush=True)
+            # === TUKANG SAPU JALUR HAPUS BERSIH (DENGAN SMART TICKET) ===
+            def hapus_background_ftp_bersih(nama_target, tiket_saya):
+                print(f"[TUKANG SAPU] Stanby 600 detik. Tiket: {tiket_saya}", flush=True)
                 time.sleep(600)
                 
+                # CEK TIKET: Apakah ada yang upload berita baru di tengah jalan?
+                tiket_terbaru = st.session_state.upload_tickets.get(nama_target)
+                if tiket_saya != tiket_terbaru:
+                    print(f"[BATAL] Tukang Sapu mundur. Ada siaran baru masuk. Tiket kadaluarsa!", flush=True)
+                    return # BATALKAN MISI! Biar Tukang Sapu yang baru yang ngurus.
+
                 try:
-                    # 1. Buat file MP3 dummy (isi angin/kosong)
-                    with open("kaset_kosong.mp3", "wb") as f:
-                        f.write(b'\xFF\xE3\x18\xC4\x00\x00\x00\x00\x00\x00\x00\x00') # Byte acak biar dibaca mp3 kosong
-                    
-                    # 2. Susup FTP
                     ftp = ftplib.FTP()
                     ftp.connect("mediacp-eu1.arenastreaming.com", 2121)
                     ftp.login("ftp_6", "3yAdS4dG@3bZ")
@@ -190,18 +199,16 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
                         try: ftp.cwd('Berita')
                         except: pass
                     
-                    # 3. Timpa kaset asli dengan kaset dummy
-                    with open("kaset_kosong.mp3", "rb") as f:
-                        ftp.storbinary(f'STOR {nama_target}', f)
-                        
+                    # HAPUS Beneran File Fisiknya
+                    ftp.delete(nama_target)
                     ftp.quit()
-                    print(f"[SUKSES] Kaset {nama_target} berhasil disabotase jadi kaset kosong!", flush=True)
+                    print(f"[SUKSES] Masa tayang habis. Fisik file {nama_target} berhasil dimusnahkan via FTP!", flush=True)
                     
                 except Exception as e:
-                    print(f"[ERROR] Tukang Sapu Barbar Gagal: {e}", flush=True)
+                    print(f"[ERROR] Gagal hapus fisik kaset: {e}", flush=True)
 
-            # Eksekusi sabotase di balik layar
-            t = threading.Thread(target=hapus_background_barbar, args=(nama_file_tujuan,))
+            # Eksekusi timer di background sambil ngasih nomor tiket ke Tukang Sapu
+            t = threading.Thread(target=hapus_background_ftp_bersih, args=(nama_file_tujuan, current_ticket))
             t.start()
 
             return True
@@ -312,7 +319,7 @@ else:
 
                 st.divider()
                 st.markdown("### 🗓️ JALUR TERJADWAL (CUSTOM SCHEDULE)")
-                st.caption("Buat jadwal tayang. Kaset akan diupload dan disabotase otomatis per sesi.")
+                st.caption("Buat jadwal tayang. Kaset otomatis dihapus setelah 10 menit.")
                 
                 jadwal_list = []
                 cols = st.columns(3) 
