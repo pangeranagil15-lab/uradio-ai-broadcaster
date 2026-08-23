@@ -90,7 +90,6 @@ if 'jumlah_jadwal' not in st.session_state:
     st.session_state.jumlah_jadwal = 1
 
 # === GLOBAL TICKET SYSTEM (Smart Reset Timer) ===
-# Menyimpan waktu (resi) terakhir setiap file diupload, biar Tukang Sapu gak salah hapus.
 if 'upload_tickets' not in st.session_state:
     st.session_state.upload_tickets = {}
 
@@ -118,10 +117,7 @@ def bersihkan_untuk_audio(teks):
     return teks.strip()
 
 def produksi_audio_elevenlabs(teks_audio, voice_id):
-    if os.path.exists("berita_siaran.mp3"):
-        print("[TEST MODE] Memakai kaset berita_siaran.mp3 yang sudah ada di folder. Hemat kuota!", flush=True)
-        return True
-        
+    # MODE HEMAT KUOTA UDAH DICABUT! Sekarang selalu generate audio baru.
     try:
         elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY", "")
         if not elevenlabs_key or not voice_id:
