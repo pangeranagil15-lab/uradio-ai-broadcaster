@@ -8,6 +8,7 @@ import threading
 import time
 import datetime
 import ftplib # Pasukan sabotase FTP
+from pydub import AudioSegment # Mixer Audio Virtual
 
 # --- ZONA WAKTU INDONESIA (WIB) ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
@@ -79,6 +80,20 @@ USERS = {
         "foto": "hamdan.jpg", 
         "voice_id": "JZGBWv46XHdJuPtv4WuY",
         "prompt_system": "Ubah info berikut jadi naskah opini lisan (800-1500 huruf) sebagai Pakar Hukum Tata Negara. Gaya bahasa: artikulasi jelas, lugas, agak lambat (slow), berbobot tajam, dan berwibawa. INSTRUKSI PENTING: Buat tempo bacanya SANGAT LAMBAT dengan cara WAJIB menyisipkan banyak tanda koma (,) dan titik-titik (...) di antara kalimat agar seolah-olah sedang mengambil jeda napas yang panjang. Wajib tutup dengan kalimat: 'Fattaqullaha mastatoktum, Billahi fi sabilil haq, wassalamualaikum warahmatullahi wabarakatuh.' Tanpa format markdown."
+    },
+    "6666": {
+        "nama": "Agus",
+        "role": "Penyiar",
+        "foto": "agus.jpg", 
+        "voice_id": "hXNnLf1MfUhNAIH9BYw9",
+        "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya bahasa: artikulasi jelas, lugas, tegas, berbobot, dan berwibawa. Buka dengan sapaan akrab namun sopan seperti: 'Halo Derr'. Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
+    },
+    "7777": {
+        "nama": "Abe Langit",
+        "role": "Penyiar",
+        "foto": "abe_langit.jpg", 
+        "voice_id": "0dLMJJSLFRTNRgiys70E",
+        "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya bahasa: sangat ceria, lugas, asik, bergaya santai ala Gen Z. WAJIB menggunakan kata ganti 'gw' dan 'elo'/'lo'. Buka dengan sapaan energik: 'Halo Derr!'. Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
     }
 }
 
@@ -117,7 +132,6 @@ def bersihkan_untuk_audio(teks):
     return teks.strip()
 
 def produksi_audio_elevenlabs(teks_audio, voice_id):
-    # MODE HEMAT KUOTA UDAH DICABUT! Sekarang selalu generate audio baru.
     try:
         elevenlabs_key = st.secrets.get("ELEVENLABS_API_KEY", "")
         if not elevenlabs_key or not voice_id:
@@ -134,6 +148,18 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         res = requests.post(url, json=data, headers=headers)
         if res.status_code == 200:
             with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
+            
+            # === [BARU] EKSEKUSI BOOSTER VOLUME ===
+            try:
+                kaset = AudioSegment.from_mp3("berita_siaran.mp3")
+                # Angka 10 di bawah ini artinya naik +10 dB. 
+                # Kalau nanti pas lu dengerin kekencengan/pecah, ganti jadi 5. Kalau masih pelan, ganti jadi 15.
+                kaset_kencang = kaset + 10 
+                kaset_kencang.export("berita_siaran.mp3", format="mp3")
+                print("[INFO] Volume kaset berhasil dinaikkan +10 dB!", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Gagal nge-boost volume: {e}", flush=True)
+
             return True
         else:
             st.error(f"ElevenLabs Error: {res.text}")
