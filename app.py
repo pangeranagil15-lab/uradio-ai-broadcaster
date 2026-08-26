@@ -7,7 +7,6 @@ import requests
 import threading
 import time
 import datetime
-import ftplib # Pasukan sabotase FTP
 from pydub import AudioSegment # Mixer Audio Virtual
 
 # --- ZONA WAKTU INDONESIA (WIB) ---
@@ -145,15 +144,13 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": kunci_bersih}
         data = {"text": teks_audio, "model_id": "eleven_multilingual_v2", "voice_settings": {"stability": 0.45, "similarity_boost": 0.75}}
         
-        res = requests.post(url, json=data, headers=headers)
+        res = requests.post(url, json=data, headers=headers, timeout=30)
         if res.status_code == 200:
             with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
             
-            # === [BARU] EKSEKUSI BOOSTER VOLUME ===
+            # Eksekusi Booster Volume (+10 dB)
             try:
                 kaset = AudioSegment.from_mp3("berita_siaran.mp3")
-                # Angka 10 di bawah ini artinya naik +10 dB. 
-                # Kalau nanti pas lu dengerin kekencengan/pecah, ganti jadi 5. Kalau masih pelan, ganti jadi 15.
                 kaset_kencang = kaset + 10 
                 kaset_kencang.export("berita_siaran.mp3", format="mp3")
                 print("[INFO] Volume kaset berhasil dinaikkan +10 dB!", flush=True)
@@ -170,22 +167,20 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
 
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
     try:
-        # Bikin nomor tiket (berdasarkan jam:menit:detik saat tombol ditekan)
+        # 1. Bikin nomor tiket
         current_ticket = time.time()
         st.session_state.upload_tickets[nama_file_tujuan] = current_ticket
 
+        # 2. Login Web MediaCP (Jalur Depan / HTTP API)
         sesi = requests.Session()
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
-        }
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'}
         
-        # 1. Login Web MediaCP 
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
         data_login = {"username": st.secrets["WEB_USER"], "user_password": st.secrets["WEB_PASS"], "language": "default"}
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # 2. Eksekusi Upload (Timpa atau Buat Baru)
+        # 3. Eksekusi Upload
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -197,40 +192,44 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
 
         if res.status_code == 200:
-            print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara (Tiket: {current_ticket})! Mengaktifkan Timer...", flush=True)
+            print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara (Tiket: {current_ticket})! Timer On...", flush=True)
             
-            # === TUKANG SAPU JALUR HAPUS BERSIH (DENGAN SMART TICKET) ===
-            def hapus_background_ftp_bersih(nama_target, tiket_saya):
+            # === [BARU] TUKANG SAPU JALUR DEPAN (HTTP API - ANTI GAGAL) ===
+            def hapus_pakai_api_resmi(nama_target, tiket_saya):
                 print(f"[TUKANG SAPU] Stanby 600 detik. Tiket: {tiket_saya}", flush=True)
                 time.sleep(600)
                 
-                # CEK TIKET: Apakah ada yang upload berita baru di tengah jalan?
+                # Cek tiket dulu
                 tiket_terbaru = st.session_state.upload_tickets.get(nama_target)
                 if tiket_saya != tiket_terbaru:
-                    print(f"[BATAL] Tukang Sapu mundur. Ada siaran baru masuk. Tiket kadaluarsa!", flush=True)
-                    return # BATALKAN MISI! Biar Tukang Sapu yang baru yang ngurus.
+                    print(f"[BATAL] Tukang Sapu mundur. Ada siaran baru masuk!", flush=True)
+                    return 
 
                 try:
-                    ftp = ftplib.FTP()
-                    ftp.connect("mediacp-eu1.arenastreaming.com", 2121)
-                    ftp.login("ftp_6", "3yAdS4dG@3bZ")
-                    ftp.set_pasv(True)
+                    print("[TUKANG SAPU] Beraksi! Membuat kaset hening untuk menimpa file...", flush=True)
+                    # Bikin kaset hening (silent) durasi 1 detik pakai pydub
+                    AudioSegment.silent(duration=1000).export("hening.mp3", format="mp3")
                     
-                    try: ftp.cwd('media/Berita')
-                    except: 
-                        try: ftp.cwd('Berita')
-                        except: pass
+                    # Login ulang API (karena sesi sebelumnya udah expired setelah 10 menit nunggu)
+                    sesi_sapu = requests.Session()
+                    sesi_sapu.get(url_login, headers=headers)
+                    sesi_sapu.post(url_login, data=data_login, headers=headers)
                     
-                    # HAPUS Beneran File Fisiknya
-                    ftp.delete(nama_target)
-                    ftp.quit()
-                    print(f"[SUKSES] Masa tayang habis. Fisik file {nama_target} berhasil dimusnahkan via FTP!", flush=True)
+                    # Upload kaset hening buat NIMPA file lama di MediaCP
+                    with open("hening.mp3", 'rb') as f_silent:
+                        files_silent = {'track': (nama_target, f_silent, 'audio/mpeg')}
+                        res_sapu = sesi_sapu.post(url_upload, data=payload, files=files_silent, headers=headers_upload)
                     
+                    if res_sapu.status_code == 200:
+                        print(f"[SUKSES] Kaset {nama_target} berhasil ditimpa dengan kaset hening via API resmi!", flush=True)
+                    else:
+                        print(f"[ERROR] MediaCP nolak kaset hening: {res_sapu.text}", flush=True)
+                        
                 except Exception as e:
-                    print(f"[ERROR] Gagal hapus fisik kaset: {e}", flush=True)
+                    print(f"[ERROR] Tukang sapu API gagal: {e}", flush=True)
 
-            # Eksekusi timer di background sambil ngasih nomor tiket ke Tukang Sapu
-            t = threading.Thread(target=hapus_background_ftp_bersih, args=(nama_file_tujuan, current_ticket))
+            # Eksekusi timer di background
+            t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket))
             t.start()
 
             return True
