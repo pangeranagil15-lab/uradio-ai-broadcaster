@@ -196,8 +196,8 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             
             # === [BARU] TUKANG SAPU JALUR DEPAN (HTTP API - ANTI GAGAL) ===
             def hapus_pakai_api_resmi(nama_target, tiket_saya):
-                print(f"[TUKANG SAPU] Stanby 600 detik. Tiket: {tiket_saya}", flush=True)
-                time.sleep(600)
+                print(f"[TUKANG SAPU] Stanby 30 detik. Tiket: {tiket_saya}", flush=True)
+                time.sleep(30)
                 
                 # Cek tiket dulu
                 tiket_terbaru = st.session_state.upload_tickets.get(nama_target)
