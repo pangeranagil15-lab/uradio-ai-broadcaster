@@ -200,8 +200,8 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             
             # === TUKANG SAPU JALUR DEPAN (TANPA SESSION STATE ERROR) ===
             def hapus_pakai_api_resmi(nama_target, tiket_saya):
-                print(f"[TUKANG SAPU] Stanby 30 detik. Tiket: {tiket_saya}", flush=True)
-                time.sleep(30)
+                print(f"[TUKANG SAPU] Stanby 600 detik. Tiket: {tiket_saya}", flush=True)
+                time.sleep(600)
                 
                 # Cek tiket di variabel global
                 tiket_terbaru = global_upload_tickets.get(nama_target)
