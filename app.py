@@ -9,6 +9,10 @@ import time
 import datetime
 from pydub import AudioSegment # Mixer Audio Virtual
 
+# --- PERBAIKAN ERROR FFPROBE / FFMPEG ---
+AudioSegment.converter = "/usr/bin/ffmpeg"
+AudioSegment.ffprobe = "/usr/bin/ffprobe"
+
 # --- ZONA WAKTU INDONESIA (WIB) ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
 
@@ -40,7 +44,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE & SESSION STATE
+# 2. DATABASE, SESSION STATE & TIKET GLOBAL
 # ==========================================
 USERS = {
     "1111": {
@@ -103,9 +107,9 @@ if 'logged_in' not in st.session_state:
 if 'jumlah_jadwal' not in st.session_state:
     st.session_state.jumlah_jadwal = 1
 
-# === GLOBAL TICKET SYSTEM (Smart Reset Timer) ===
-if 'upload_tickets' not in st.session_state:
-    st.session_state.upload_tickets = {}
+# === PERBAIKAN TIKET GLOBAL (Bebas Error Background Thread) ===
+# Kita pakai dictionary python murni, bukan session_state.
+global_upload_tickets = {}
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database_berita.json")
@@ -167,11 +171,11 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
 
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
     try:
-        # 1. Bikin nomor tiket
+        # 1. Bikin nomor tiket & Masukin ke Variabel Global
         current_ticket = time.time()
-        st.session_state.upload_tickets[nama_file_tujuan] = current_ticket
+        global_upload_tickets[nama_file_tujuan] = current_ticket
 
-        # 2. Login Web MediaCP (Jalur Depan / HTTP API)
+        # 2. Login Web MediaCP 
         sesi = requests.Session()
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'}
         
@@ -194,41 +198,38 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         if res.status_code == 200:
             print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara (Tiket: {current_ticket})! Timer On...", flush=True)
             
-            # === [BARU] TUKANG SAPU JALUR DEPAN (HTTP API - ANTI GAGAL) ===
+            # === TUKANG SAPU JALUR DEPAN (TANPA SESSION STATE ERROR) ===
             def hapus_pakai_api_resmi(nama_target, tiket_saya):
                 print(f"[TUKANG SAPU] Stanby 30 detik. Tiket: {tiket_saya}", flush=True)
                 time.sleep(30)
                 
-                # Cek tiket dulu
-                tiket_terbaru = st.session_state.upload_tickets.get(nama_target)
+                # Cek tiket di variabel global
+                tiket_terbaru = global_upload_tickets.get(nama_target)
                 if tiket_saya != tiket_terbaru:
                     print(f"[BATAL] Tukang Sapu mundur. Ada siaran baru masuk!", flush=True)
                     return 
 
                 try:
-                    print("[TUKANG SAPU] Beraksi! Membuat kaset hening untuk menimpa file...", flush=True)
-                    # Bikin kaset hening (silent) durasi 1 detik pakai pydub
+                    print("[TUKANG SAPU] Beraksi! Membuat kaset hening...", flush=True)
                     AudioSegment.silent(duration=1000).export("hening.mp3", format="mp3")
                     
-                    # Login ulang API (karena sesi sebelumnya udah expired setelah 10 menit nunggu)
                     sesi_sapu = requests.Session()
                     sesi_sapu.get(url_login, headers=headers)
                     sesi_sapu.post(url_login, data=data_login, headers=headers)
                     
-                    # Upload kaset hening buat NIMPA file lama di MediaCP
                     with open("hening.mp3", 'rb') as f_silent:
                         files_silent = {'track': (nama_target, f_silent, 'audio/mpeg')}
                         res_sapu = sesi_sapu.post(url_upload, data=payload, files=files_silent, headers=headers_upload)
                     
                     if res_sapu.status_code == 200:
-                        print(f"[SUKSES] Kaset {nama_target} berhasil ditimpa dengan kaset hening via API resmi!", flush=True)
+                        print(f"[SUKSES] Kaset {nama_target} berhasil ditimpa dengan kaset hening!", flush=True)
                     else:
-                        print(f"[ERROR] MediaCP nolak kaset hening: {res_sapu.text}", flush=True)
+                        print(f"[ERROR] Nolak kaset hening: {res_sapu.text}", flush=True)
                         
                 except Exception as e:
-                    print(f"[ERROR] Tukang sapu API gagal: {e}", flush=True)
+                    print(f"[ERROR] Tukang sapu gagal: {e}", flush=True)
 
-            # Eksekusi timer di background
+            # Eksekusi timer
             t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket))
             t.start()
 
