@@ -7,14 +7,21 @@ import requests
 import threading
 import time
 import datetime
-from pydub import AudioSegment # Mixer Audio Virtual
+import shutil # <--- Alat Copy File Baru
+
+from pydub import AudioSegment 
 
 # --- PERBAIKAN ERROR FFPROBE / FFMPEG ---
 AudioSegment.converter = "/usr/bin/ffmpeg"
 AudioSegment.ffprobe = "/usr/bin/ffprobe"
 
-# --- ZONA WAKTU INDONESIA (WIB) ---
+# --- ZONA WAKTU & SETTING ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
+WAKTU_TUNGGU_HAPUS = 30  # <--- GANTI JADI 600 KALAU MAU 10 MENIT BENERAN
+
+# --- GLOBAL SECRETS (Biar Tukang Sapu bisa baca password) ---
+WEB_USER = st.secrets["WEB_USER"]
+WEB_PASS = st.secrets["WEB_PASS"]
 
 # ==========================================
 # 1. SETUP TEMA & HALAMAN
@@ -44,7 +51,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE, SESSION STATE & TIKET GLOBAL
+# 2. DATABASE, USERS & TIKET PERMANEN
 # ==========================================
 USERS = {
     "1111": {
@@ -107,12 +114,9 @@ if 'logged_in' not in st.session_state:
 if 'jumlah_jadwal' not in st.session_state:
     st.session_state.jumlah_jadwal = 1
 
-# === PERBAIKAN TIKET GLOBAL (Bebas Error Background Thread) ===
-# Kita pakai dictionary python murni, bukan session_state.
-global_upload_tickets = {}
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database_berita.json")
+TIKET_FILE = os.path.join(BASE_DIR, "tiket_sapu.json")
 
 def load_db():
     if os.path.exists(DB_FILE):
@@ -121,6 +125,22 @@ def load_db():
 
 def save_db(data):
     with open(DB_FILE, "w") as f: json.dump(data, f)
+
+def set_tiket(nama_file, tiket):
+    data = {}
+    if os.path.exists(TIKET_FILE):
+        try:
+            with open(TIKET_FILE, "r") as f: data = json.load(f)
+        except: pass
+    data[nama_file] = tiket
+    with open(TIKET_FILE, "w") as f: json.dump(data, f)
+
+def get_tiket(nama_file):
+    if os.path.exists(TIKET_FILE):
+        try:
+            with open(TIKET_FILE, "r") as f: return json.load(f).get(nama_file)
+        except: return None
+    return None
 
 db = load_db()
 
@@ -151,8 +171,6 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         res = requests.post(url, json=data, headers=headers, timeout=30)
         if res.status_code == 200:
             with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
-            
-            # Eksekusi Booster Volume (+10 dB)
             try:
                 kaset = AudioSegment.from_mp3("berita_siaran.mp3")
                 kaset_kencang = kaset + 10 
@@ -160,7 +178,6 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
                 print("[INFO] Volume kaset berhasil dinaikkan +10 dB!", flush=True)
             except Exception as e:
                 print(f"[WARNING] Gagal nge-boost volume: {e}", flush=True)
-
             return True
         else:
             st.error(f"ElevenLabs Error: {res.text}")
@@ -171,20 +188,19 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
 
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
     try:
-        # 1. Bikin nomor tiket & Masukin ke Variabel Global
+        # 1. Catat Tiket Permanen
         current_ticket = time.time()
-        global_upload_tickets[nama_file_tujuan] = current_ticket
+        set_tiket(nama_file_tujuan, current_ticket)
 
-        # 2. Login Web MediaCP 
+        # 2. Login pakai variabel global (Biar aman dari background thread)
         sesi = requests.Session()
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'}
-        
+        headers = {'User-Agent': 'Mozilla/5.0'}
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
-        data_login = {"username": st.secrets["WEB_USER"], "user_password": st.secrets["WEB_PASS"], "language": "default"}
+        data_login = {"username": WEB_USER, "user_password": WEB_PASS, "language": "default"}
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # 3. Eksekusi Upload
+        # 3. Upload File Utama
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -196,43 +212,47 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
 
         if res.status_code == 200:
-            print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara (Tiket: {current_ticket})! Timer On...", flush=True)
+            print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara! Timer {WAKTU_TUNGGU_HAPUS}s On...", flush=True)
             
-            # === TUKANG SAPU JALUR DEPAN (TANPA SESSION STATE ERROR) ===
-            def hapus_pakai_api_resmi(nama_target, tiket_saya):
-                print(f"[TUKANG SAPU] Stanby 600 detik. Tiket: {tiket_saya}", flush=True)
-                time.sleep(600)
+            # === TUKANG SAPU PERMANEN ===
+            def hapus_pakai_api_resmi(nama_target, tiket_saya, file_asal):
+                print(f"[TUKANG SAPU] Stanby {WAKTU_TUNGGU_HAPUS} detik. Tiket: {tiket_saya}", flush=True)
+                time.sleep(WAKTU_TUNGGU_HAPUS)
                 
-                # Cek tiket di variabel global
-                tiket_terbaru = global_upload_tickets.get(nama_target)
+                # Cek tiket dari JSON
+                tiket_terbaru = get_tiket(nama_target)
                 if tiket_saya != tiket_terbaru:
-                    print(f"[BATAL] Tukang Sapu mundur. Ada siaran baru masuk!", flush=True)
+                    print(f"[BATAL] Tukang Sapu mundur. Ada jadwal baru yang nimpa!", flush=True)
                     return 
 
                 try:
-                    print("[TUKANG SAPU] Beraksi! Membuat kaset hening...", flush=True)
-                    AudioSegment.silent(duration=1000).export("hening.mp3", format="mp3")
+                    print(f"[TUKANG SAPU] Beraksi buat hapus {nama_target}...", flush=True)
+                    file_hening = f"hening_{nama_target}"
+                    AudioSegment.silent(duration=1000).export(file_hening, format="mp3")
                     
                     sesi_sapu = requests.Session()
                     sesi_sapu.get(url_login, headers=headers)
                     sesi_sapu.post(url_login, data=data_login, headers=headers)
                     
-                    with open("hening.mp3", 'rb') as f_silent:
+                    with open(file_hening, 'rb') as f_silent:
                         files_silent = {'track': (nama_target, f_silent, 'audio/mpeg')}
                         res_sapu = sesi_sapu.post(url_upload, data=payload, files=files_silent, headers=headers_upload)
                     
                     if res_sapu.status_code == 200:
-                        print(f"[SUKSES] Kaset {nama_target} berhasil ditimpa dengan kaset hening!", flush=True)
+                        print(f"[SUKSES] Kaset {nama_target} berhasil disapu / ditimpa hening!", flush=True)
+                        try:
+                            os.remove(file_hening) # Bersih-bersih file sampah
+                            if "jadwal" in file_asal: os.remove(file_asal)
+                        except: pass
                     else:
                         print(f"[ERROR] Nolak kaset hening: {res_sapu.text}", flush=True)
                         
                 except Exception as e:
                     print(f"[ERROR] Tukang sapu gagal: {e}", flush=True)
 
-            # Eksekusi timer
-            t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket))
+            # Eksekusi Tukang Sapu
+            t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket, file_lokal))
             t.start()
-
             return True
         else: return False
     except Exception as e:
@@ -272,9 +292,6 @@ else:
 
     st.title(f"🎙️ Meja {user['role']}")
     
-    # ==========================
-    # 5. MEJA KONTRIBUTOR (PENYIAR & NARASUMBER)
-    # ==========================
     if user["role"] in ["Penyiar", "Narasumber"]:
         with st.container(border=True):
             st.subheader(f"📝 Draft Naskah Baru - {user['nama']}")
@@ -287,9 +304,7 @@ else:
                         try:
                             gemini_key = st.secrets["GEMINI_API_KEY"]
                             genai.configure(api_key=gemini_key)
-                            
                             prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
-                            
                             model = genai.GenerativeModel("gemini-3.6-flash")
                             response = model.generate_content(prompt)
                             
@@ -310,15 +325,11 @@ else:
         if db["status"] == "approved":
             st.info("✅ Naskah terakhirmu sudah diproduksi / dijadwalkan.")
 
-    # ==========================
-    # 6. MEJA PEMRED
-    # ==========================
     elif user["role"] == "Pemimpin Redaksi":
         if db["status"] == "kosong":
             st.info("Belum ada draft masuk.")
             
         elif db["status"] == "menunggu_validasi":
-            
             st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Unknown')} ({db.get('role_penulis', 'Penyiar')})")
             
             with st.container(border=True):
@@ -327,7 +338,6 @@ else:
                 
                 st.divider()
                 st.markdown("### 🚀 JALUR EKSPRES (BREAKING NEWS)")
-                st.caption("Kaset akan diproduksi dan langsung mengudara ke radio saat ini juga.")
                 if st.button("🔥 Siarkan Sekarang", use_container_width=True):
                     with st.spinner("Memproduksi Audio & Menerobos ke Radio..."):
                         teks_bersih = bersihkan_untuk_audio(naskah_edit)
@@ -341,8 +351,6 @@ else:
 
                 st.divider()
                 st.markdown("### 🗓️ JALUR TERJADWAL (CUSTOM SCHEDULE)")
-                st.caption("Buat jadwal tayang. Kaset otomatis dihapus setelah 10 menit.")
-                
                 jadwal_list = []
                 cols = st.columns(3) 
                 for i in range(st.session_state.jumlah_jadwal):
@@ -363,27 +371,30 @@ else:
                             db["naskah"] = teks_bersih
                             save_db(db)
                             
-                            def kurir_ninja(target_waktu, urutan):
+                            def kurir_ninja(target_waktu, urutan, file_master_kurir):
                                 sekarang = datetime.datetime.now(WIB)
                                 waktu_target = datetime.datetime.combine(sekarang.date(), target_waktu)
                                 waktu_target = waktu_target.replace(tzinfo=WIB)
-                                
                                 if waktu_target < sekarang:
                                     waktu_target += datetime.timedelta(days=1)
                                 jeda = (waktu_target - sekarang).total_seconds()
                                 
                                 if jeda > 5:
-                                    print(f"[INFO] Kurir {urutan} standby! OTW MediaCP {int(jeda)} detik lagi (Target: {waktu_target.strftime('%H:%M:%S')} WIB).", flush=True)
+                                    print(f"[INFO] Kurir {urutan} standby! OTW MediaCP {int(jeda)} detik lagi...", flush=True)
                                     time.sleep(jeda)
                                     
-                                print(f"[INFO] JAM TAYANG WIB! Kurir {urutan} melempar kaset ke Radio!", flush=True)
-                                kirim_ke_radio("berita_siaran.mp3", f"berita_jadwal_{urutan}.mp3")
+                                print(f"[INFO] JAM TAYANG! Kurir {urutan} lempar kaset terjadwal!", flush=True)
+                                kirim_ke_radio(file_master_kurir, f"berita_jadwal_{urutan}.mp3")
 
+                            # Copy kaset untuk masing-masing jadwal biar nggak bentrok
                             for i, jam_tayang in enumerate(jadwal_list):
-                                t_kurir = threading.Thread(target=kurir_ninja, args=(jam_tayang, i+1))
+                                file_copy_khusus = f"berita_siaran_copy_{i+1}.mp3"
+                                shutil.copy("berita_siaran.mp3", file_copy_khusus)
+                                
+                                t_kurir = threading.Thread(target=kurir_ninja, args=(jam_tayang, i+1, file_copy_khusus))
                                 t_kurir.start()
                             
-                            st.toast(f'Audio beres! {len(jadwal_list)} Kurir sudah standby untuk jam-jam tersebut.', icon='🥷')
+                            st.toast(f'Audio beres! {len(jadwal_list)} Kurir jadwal udah jalan di background.', icon='🥷')
                             st.rerun()
 
                 st.divider()
@@ -397,12 +408,5 @@ else:
         elif db["status"] == "approved":
             st.success("✅ Naskah Approved! Master kaset siap beroperasi.")
             st.audio("berita_siaran.mp3")
-            
             with open("berita_siaran.mp3", "rb") as file_mp3:
-                st.download_button(
-                    label="⬇️ Download Kaset Master (Manual)",
-                    data=file_mp3,
-                    file_name="berita_master.mp3",
-                    mime="audio/mpeg",
-                    use_container_width=True
-                )
+                st.download_button(label="⬇️ Download Kaset Master", data=file_mp3, file_name="berita_master.mp3", mime="audio/mpeg", use_container_width=True)
