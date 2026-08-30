@@ -17,7 +17,7 @@ AudioSegment.ffprobe = "/usr/bin/ffprobe"
 
 # --- ZONA WAKTU & SETTING ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
-WAKTU_TUNGGU_HAPUS = 30  # <--- GANTI JADI 600 KALAU MAU 10 MENIT BENERAN
+WAKTU_TUNGGU_HAPUS = 600  # <--- UDAH FIX 600 DETIK (10 MENIT)
 
 # --- GLOBAL SECRETS (Biar Tukang Sapu bisa baca password) ---
 WEB_USER = st.secrets["WEB_USER"]
@@ -173,9 +173,10 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
             with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
             try:
                 kaset = AudioSegment.from_mp3("berita_siaran.mp3")
-                kaset_kencang = kaset + 10 
+                # ---> TITIK AMAN VOLUME (+4 dB) BIAR GAK PECAH
+                kaset_kencang = kaset + 4 
                 kaset_kencang.export("berita_siaran.mp3", format="mp3")
-                print("[INFO] Volume kaset berhasil dinaikkan +10 dB!", flush=True)
+                print("[INFO] Volume kaset berhasil dinaikkan +4 dB (Titik Aman)!", flush=True)
             except Exception as e:
                 print(f"[WARNING] Gagal nge-boost volume: {e}", flush=True)
             return True
