@@ -200,12 +200,12 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # 3. Upload File Utama
-        url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8/uploadTrack"
+        # 3. Upload File Utama (GANTI JADI ID 7)
+        url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/7/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
         headers_upload['Origin'] = 'https://mediacp-eu1.arenastreaming.com:2020'
-        headers_upload['Referer'] = 'https://mediacp-eu1.arenastreaming.com:2020/controller/Media/8'
+        headers_upload['Referer'] = 'https://mediacp-eu1.arenastreaming.com:2020/controller/Media/7'
         
         with open(file_lokal, 'rb') as f:
             files = {'track': (nama_file_tujuan, f, 'audio/mpeg')}
@@ -384,7 +384,8 @@ else:
                                     time.sleep(jeda)
                                     
                                 print(f"[INFO] JAM TAYANG! Kurir {urutan} lempar kaset terjadwal!", flush=True)
-                                kirim_ke_radio(file_master_kurir, f"berita_jadwal_{urutan}.mp3")
+                                # ---> INI YANG DIUBAH! CUMA PAKAI 1 NAMA FILE FIX:
+                                kirim_ke_radio(file_master_kurir, "berita_terjadwal_master.mp3")
 
                             # Copy kaset untuk masing-masing jadwal biar nggak bentrok
                             for i, jam_tayang in enumerate(jadwal_list):
