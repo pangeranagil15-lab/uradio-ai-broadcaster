@@ -104,6 +104,13 @@ USERS = {
         "foto": "abe_langit.jpg", 
         "voice_id": "0dLMJJSLFRTNRgiys70E",
         "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya bahasa: sangat ceria, lugas, asik, bergaya santai ala Gen Z. WAJIB menggunakan kata ganti 'gw' dan 'elo'/'lo'. Buka dengan sapaan energik: 'Halo Derr!'. Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
+    },
+    "8888": {
+        "nama": "Didi Sang Gledek",
+        "role": "Penyiar",
+        "foto": "didi.jpg", 
+        "voice_id": "z9MHmvoAUrDuC9c0yeWd",
+        "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya bahasa: artikulasi terdengar ceria, lugas, bergaya santai dengan komunikasi keseharian menggunakan kata 'gw' dan 'elo' ala Gen Z. Buka dengan sapaan asik: 'Halo Derr!'. Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
     }
 }
 
