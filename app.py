@@ -387,12 +387,13 @@ else:
                     with st.spinner("Memproduksi Audio & Menerobos ke Radio..."):
                         teks_bersih = bersihkan_untuk_audio(naskah_edit)
                         if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
-                            # --- TRIGGER BACKUP GDRIVE OTOMATIS ---
+                            # --- TRIGGER BACKUP GDRIVE OTOMATIS (THREADING) ---
                             t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
                             t_gdrive.start()
 
-                            # --- TRIGGER KIRIM KE RADIO ---
-                            kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
+                            # --- TRIGGER KIRIM KE RADIO (THREADING) ---
+                            t_radio = threading.Thread(target=kirim_ke_radio, args=("berita_siaran.mp3", "berita_terbaru_ekspres.mp3"))
+                            t_radio.start()
                             
                             db["status"] = "approved"
                             db["naskah"] = teks_bersih
