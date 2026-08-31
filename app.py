@@ -391,9 +391,10 @@ else:
                             t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
                             t_gdrive.start()
 
-                            # --- TRIGGER KIRIM KE RADIO (THREADING) ---
-                            t_radio = threading.Thread(target=kirim_ke_radio, args=("berita_siaran.mp3", "berita_terbaru_ekspres.mp3"))
-                            t_radio.start()
+                            # --- EKSEKUSI LANGSUNG KE RADIO (BLOCKED UNTUK DEBUG) ---
+                            print("[INFO] Mengeksekusi pengiriman langsung ke MediaCP...", flush=True)
+                            hasil_radio = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
+                            print(f"[INFO] Status kirim ke radio: {hasil_radio}", flush=True)
                             
                             db["status"] = "approved"
                             db["naskah"] = teks_bersih
