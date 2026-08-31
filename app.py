@@ -7,12 +7,12 @@ import requests
 import threading
 import time
 import datetime
-import shutil
+import shutil 
 
 from pydub import AudioSegment 
 
-# --- GOOGLE DRIVE IMPORTS ---
-from google.oauth2 import service_account
+# --- GOOGLE DRIVE IMPORTS (OAUTH 2.0) ---
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
@@ -139,7 +139,6 @@ if 'jumlah_jadwal' not in st.session_state:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database_berita.json")
 TIKET_FILE = os.path.join(BASE_DIR, "tiket_sapu.json")
-GDRIVE_KEY_FILE = os.path.join(BASE_DIR, ".streamlit", "gdrive_key.json")
 
 def load_db():
     if os.path.exists(DB_FILE):
@@ -211,12 +210,13 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
 
 def simpan_ke_gdrive(file_lokal, nama_penyiar):
     try:
-        if not os.path.exists(GDRIVE_KEY_FILE):
-            print("[WARNING] File JSON GDrive nggak ketemu di server! Skip backup.", flush=True)
-            return False
-
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
-        creds = service_account.Credentials.from_service_account_file(GDRIVE_KEY_FILE, scopes=SCOPES)
+        creds = Credentials(
+            token=None,
+            refresh_token=st.secrets.get("GDRIVE_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=st.secrets.get("GDRIVE_CLIENT_ID"),
+            client_secret=st.secrets.get("GDRIVE_CLIENT_SECRET")
+        )
         service = build('drive', 'v3', credentials=creds)
 
         waktu_sekarang = datetime.datetime.now(WIB).strftime("%Y-%m-%d_%H-%M-%S")
@@ -316,7 +316,7 @@ if not st.session_state.logged_in:
 else:
     user = st.session_state.user_data
     with st.sidebar:
-        try: st.image(user["foto"], width=150, use_container_width=True)
+        try: st.image(user["foto"], width=150)
         except: st.info("Foto belum diupload")
         st.title(user["nama"])
         st.caption(f"Posisi: {user['role']}")
