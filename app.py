@@ -248,9 +248,10 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
         data_login = {"username": WEB_USER, "user_password": WEB_PASS, "language": "default"}
         
+        print("[DEBUG] Mencoba login ke MediaCP...", flush=True)
         sesi.get(url_login, headers=headers)
         login_res = sesi.post(url_login, data=data_login, headers=headers)
-        print(f"[DEBUG] Login MediaCP status: {login_res.status_code}", flush=True)
+        print(f"[DEBUG] Status Login MediaCP: {login_res.status_code}", flush=True)
         
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/7/uploadTrack"
         payload = {'path': '/Berita'}
@@ -258,22 +259,27 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         headers_upload['Origin'] = 'https://mediacp-eu1.arenastreaming.com:2020'
         headers_upload['Referer'] = 'https://mediacp-eu1.arenastreaming.com:2020/controller/Media/7'
         
+        print(f"[DEBUG] Mengirim file {nama_file_tujuan} ke MediaCP...", flush=True)
         with open(file_lokal, 'rb') as f:
             files = {'track': (nama_file_tujuan, f, 'audio/mpeg')}
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
 
-        print(f"[DEBUG] Upload MediaCP response code: {res.status_code}", flush=True)
+        print(f"[DEBUG] Status Upload MediaCP: {res.status_code}", flush=True)
 
         if res.status_code == 200:
             print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara! Timer {WAKTU_TUNGGU_HAPUS}s On...", flush=True)
             
             def hapus_pakai_api_resmi(nama_target, tiket_saya, file_asal):
+                print(f"[TUKANG SAPU] Standby {WAKTU_TUNGGU_HAPUS} detik. Tiket: {tiket_saya}", flush=True)
                 time.sleep(WAKTU_TUNGGU_HAPUS)
+                
                 tiket_terbaru = get_tiket(nama_target)
                 if tiket_saya != tiket_terbaru:
+                    print(f"[BATAL] Tukang Sapu mundur. Ada jadwal baru yang nimpa!", flush=True)
                     return 
 
                 try:
+                    print(f"[TUKANG SAPU] Beraksi buat hapus {nama_target}...", flush=True)
                     file_hening = f"hening_{nama_target}"
                     AudioSegment.silent(duration=1000).export(file_hening, format="mp3")
                     
@@ -286,21 +292,24 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
                         res_sapu = sesi_sapu.post(url_upload, data=payload, files=files_silent, headers=headers_upload)
                     
                     if res_sapu.status_code == 200:
-                        print(f"[SUKSES] Kaset {nama_target} disapu hening!", flush=True)
+                        print(f"[SUKSES] Kaset {nama_target} berhasil disapu / ditimpa hening!", flush=True)
                         try:
                             os.remove(file_hening)
                             if "jadwal" in file_asal: os.remove(file_asal)
                         except: pass
-                except: pass
+                    else:
+                        print(f"[ERROR] Nolak kaset hening: {res_sapu.text[:200]}", flush=True)
+                except Exception as e:
+                    print(f"[ERROR] Tukang sapu gagal: {e}", flush=True)
 
             t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket, file_lokal))
             t.start()
             return True
         else: 
-            print(f"[ERROR RADIO] Gagal lempar ke MediaCP. Status code: {res.status_code}", flush=True)
+            print(f"[ERROR RADIO] Gagal lempar ke MediaCP. Status code: {res.status_code}, Respon: {res.text[:200]}", flush=True)
             return False
     except Exception as e: 
-        print(f"[ERROR RADIO SYSTEM] {e}", flush=True)
+        print(f"[ERROR CRITICAL RADIO SYSTEM]: {e}", flush=True)
         return False
 
 # ==========================================
@@ -391,7 +400,7 @@ else:
                             t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
                             t_gdrive.start()
 
-                            # --- EKSEKUSI LANGSUNG KE RADIO (BLOCKED UNTUK DEBUG) ---
+                            # --- EKSEKUSI LANGSUNG KE RADIO ---
                             print("[INFO] Mengeksekusi pengiriman langsung ke MediaCP...", flush=True)
                             hasil_radio = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
                             print(f"[INFO] Status kirim ke radio: {hasil_radio}", flush=True)
