@@ -7,7 +7,7 @@ import requests
 import threading
 import time
 import datetime
-import shutil 
+import shutil
 
 from pydub import AudioSegment 
 
@@ -292,8 +292,12 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
             t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket, file_lokal))
             t.start()
             return True
-        else: return False
-    except Exception as e: return False
+        else: 
+            print(f"[ERROR RADIO] Gagal lempar ke MediaCP. Status code: {res.status_code}", flush=True)
+            return False
+    except Exception as e: 
+        print(f"[ERROR RADIO SYSTEM] {e}", flush=True)
+        return False
 
 # ==========================================
 # 4. HALAMAN LOGIN & SIDEBAR
@@ -341,7 +345,7 @@ else:
                             gemini_key = st.secrets["GEMINI_API_KEY"]
                             genai.configure(api_key=gemini_key)
                             prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
-                            model = genai.GenerativeModel("gemini-3.6-flash")
+                            model = genai.GenerativeModel("gemini-1.5-flash")
                             response = model.generate_content(prompt)
                             
                             db["status"] = "menunggu_validasi"
@@ -383,7 +387,9 @@ else:
                             t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
                             t_gdrive.start()
 
+                            # --- TRIGGER KIRIM KE RADIO ---
                             kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
+                            
                             db["status"] = "approved"
                             db["naskah"] = teks_bersih
                             save_db(db)
