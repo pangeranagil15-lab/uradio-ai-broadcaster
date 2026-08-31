@@ -7,9 +7,14 @@ import requests
 import threading
 import time
 import datetime
-import shutil # <--- Alat Copy File Baru
+import shutil
 
 from pydub import AudioSegment 
+
+# --- GOOGLE DRIVE IMPORTS ---
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 # --- PERBAIKAN ERROR FFPROBE / FFMPEG ---
 AudioSegment.converter = "/usr/bin/ffmpeg"
@@ -17,11 +22,14 @@ AudioSegment.ffprobe = "/usr/bin/ffprobe"
 
 # --- ZONA WAKTU & SETTING ---
 WIB = datetime.timezone(datetime.timedelta(hours=7))
-WAKTU_TUNGGU_HAPUS = 600  # <--- UDAH FIX 600 DETIK (10 MENIT)
+WAKTU_TUNGGU_HAPUS = 600  # 10 MENIT
 
-# --- GLOBAL SECRETS (Biar Tukang Sapu bisa baca password) ---
+# --- GLOBAL SECRETS ---
 WEB_USER = st.secrets["WEB_USER"]
 WEB_PASS = st.secrets["WEB_PASS"]
+
+# --- GDRIVE SETTINGS ---
+GDRIVE_FOLDER_ID = "1NZu0i-jd3kgMR4SZEejhpZOXTyKeTnEG"
 
 # ==========================================
 # 1. SETUP TEMA & HALAMAN
@@ -51,7 +59,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE, USERS & TIKET PERMANEN
+# 2. DATABASE, USERS, FILE PATHS
 # ==========================================
 USERS = {
     "1111": {
@@ -111,6 +119,13 @@ USERS = {
         "foto": "didi.jpg", 
         "voice_id": "z9MHmvoAUrDuC9c0yeWd",
         "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya bahasa: artikulasi terdengar ceria, lugas, bergaya santai dengan komunikasi keseharian menggunakan kata 'gw' dan 'elo' ala Gen Z. Buka dengan sapaan asik: 'Halo Derr!'. Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
+    },
+    "9999": {
+        "nama": "Arif Hari Ahmad",
+        "role": "Penyiar",
+        "foto": "arif.jpg", 
+        "voice_id": "7F5iDVXfb9MFGQlMtTpV",
+        "prompt_system": "Ubah info berikut jadi naskah radio lisan (800-1500 huruf). Gaya bahasa: artikulasi terdengar jelas, lugas, tegas, berbobot, agak serak, dan berwibawa. Buka dengan sapaan akrab namun sopan seperti: 'Halo Derr'. Tutup dengan: 'Tetap bersama kami, URadio, Membersamai Kita'. Tanpa format markdown."
     }
 }
 
@@ -124,6 +139,7 @@ if 'jumlah_jadwal' not in st.session_state:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "database_berita.json")
 TIKET_FILE = os.path.join(BASE_DIR, "tiket_sapu.json")
+GDRIVE_KEY_FILE = os.path.join(BASE_DIR, ".streamlit", "gdrive_key.json")
 
 def load_db():
     if os.path.exists(DB_FILE):
@@ -152,7 +168,7 @@ def get_tiket(nama_file):
 db = load_db()
 
 # ==========================================
-# 3. FUNGSI-FUNGSI PENDUKUNG (AI & KURIR)
+# 3. FUNGSI-FUNGSI PENDUKUNG (AI, RADIO, GDRIVE)
 # ==========================================
 def bersihkan_untuk_audio(teks):
     teks = re.sub(r'\[.*?\]', '', teks)
@@ -180,10 +196,9 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
             with open("berita_siaran.mp3", 'wb') as f: f.write(res.content)
             try:
                 kaset = AudioSegment.from_mp3("berita_siaran.mp3")
-                # ---> TITIK AMAN VOLUME (+4 dB) BIAR GAK PECAH
                 kaset_kencang = kaset + 4 
                 kaset_kencang.export("berita_siaran.mp3", format="mp3")
-                print("[INFO] Volume kaset berhasil dinaikkan +4 dB (Titik Aman)!", flush=True)
+                print("[INFO] Volume kaset berhasil dinaikkan +4 dB!", flush=True)
             except Exception as e:
                 print(f"[WARNING] Gagal nge-boost volume: {e}", flush=True)
             return True
@@ -194,13 +209,40 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
         st.error(f"Error Sistem ElevenLabs: {e}")
         return False
 
+def simpan_ke_gdrive(file_lokal, nama_penyiar):
+    try:
+        if not os.path.exists(GDRIVE_KEY_FILE):
+            print("[WARNING] File JSON GDrive nggak ketemu di server! Skip backup.", flush=True)
+            return False
+
+        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        creds = service_account.Credentials.from_service_account_file(GDRIVE_KEY_FILE, scopes=SCOPES)
+        service = build('drive', 'v3', credentials=creds)
+
+        waktu_sekarang = datetime.datetime.now(WIB).strftime("%Y-%m-%d_%H-%M-%S")
+        nama_file_drive = f"{waktu_sekarang}_{nama_penyiar}_Arsip.mp3"
+
+        file_metadata = {
+            'name': nama_file_drive,
+            'parents': [GDRIVE_FOLDER_ID]
+        }
+        media = MediaFileUpload(file_lokal, mimetype='audio/mpeg', resumable=True)
+        
+        print(f"[GDRIVE] OTW Upload arsip: {nama_file_drive}...", flush=True)
+        request = service.files().create(body=file_metadata, media_body=media, fields='id')
+        response = request.execute()
+        
+        print(f"[GDRIVE] SUKSES! Arsip tersimpan di Drive lu.", flush=True)
+        return True
+    except Exception as e:
+        print(f"[ERROR GDRIVE] Gagal upload arsip: {e}", flush=True)
+        return False
+
 def kirim_ke_radio(file_lokal, nama_file_tujuan):
     try:
-        # 1. Catat Tiket Permanen
         current_ticket = time.time()
         set_tiket(nama_file_tujuan, current_ticket)
 
-        # 2. Login pakai variabel global (Biar aman dari background thread)
         sesi = requests.Session()
         headers = {'User-Agent': 'Mozilla/5.0'}
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
@@ -208,7 +250,6 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         sesi.get(url_login, headers=headers)
         sesi.post(url_login, data=data_login, headers=headers)
         
-        # 3. Upload File Utama (GANTI JADI ID 7)
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/7/uploadTrack"
         payload = {'path': '/Berita'}
         headers_upload = headers.copy()
@@ -222,19 +263,13 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         if res.status_code == 200:
             print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara! Timer {WAKTU_TUNGGU_HAPUS}s On...", flush=True)
             
-            # === TUKANG SAPU PERMANEN ===
             def hapus_pakai_api_resmi(nama_target, tiket_saya, file_asal):
-                print(f"[TUKANG SAPU] Stanby {WAKTU_TUNGGU_HAPUS} detik. Tiket: {tiket_saya}", flush=True)
                 time.sleep(WAKTU_TUNGGU_HAPUS)
-                
-                # Cek tiket dari JSON
                 tiket_terbaru = get_tiket(nama_target)
                 if tiket_saya != tiket_terbaru:
-                    print(f"[BATAL] Tukang Sapu mundur. Ada jadwal baru yang nimpa!", flush=True)
                     return 
 
                 try:
-                    print(f"[TUKANG SAPU] Beraksi buat hapus {nama_target}...", flush=True)
                     file_hening = f"hening_{nama_target}"
                     AudioSegment.silent(duration=1000).export(file_hening, format="mp3")
                     
@@ -247,25 +282,18 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
                         res_sapu = sesi_sapu.post(url_upload, data=payload, files=files_silent, headers=headers_upload)
                     
                     if res_sapu.status_code == 200:
-                        print(f"[SUKSES] Kaset {nama_target} berhasil disapu / ditimpa hening!", flush=True)
+                        print(f"[SUKSES] Kaset {nama_target} disapu hening!", flush=True)
                         try:
-                            os.remove(file_hening) # Bersih-bersih file sampah
+                            os.remove(file_hening)
                             if "jadwal" in file_asal: os.remove(file_asal)
                         except: pass
-                    else:
-                        print(f"[ERROR] Nolak kaset hening: {res_sapu.text}", flush=True)
-                        
-                except Exception as e:
-                    print(f"[ERROR] Tukang sapu gagal: {e}", flush=True)
+                except: pass
 
-            # Eksekusi Tukang Sapu
             t = threading.Thread(target=hapus_pakai_api_resmi, args=(nama_file_tujuan, current_ticket, file_lokal))
             t.start()
             return True
         else: return False
-    except Exception as e:
-        print(f"Error Upload: {e}")
-        return False
+    except Exception as e: return False
 
 # ==========================================
 # 4. HALAMAN LOGIN & SIDEBAR
@@ -343,6 +371,7 @@ else:
             with st.container(border=True):
                 naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=200)
                 suara_yg_dipakai = db.get("voice_id_penulis", "")
+                nama_penulis_audio = db.get("penulis", "Unknown")
                 
                 st.divider()
                 st.markdown("### 🚀 JALUR EKSPRES (BREAKING NEWS)")
@@ -350,11 +379,15 @@ else:
                     with st.spinner("Memproduksi Audio & Menerobos ke Radio..."):
                         teks_bersih = bersihkan_untuk_audio(naskah_edit)
                         if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
+                            # --- TRIGGER BACKUP GDRIVE OTOMATIS ---
+                            t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
+                            t_gdrive.start()
+
                             kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
                             db["status"] = "approved"
                             db["naskah"] = teks_bersih
                             save_db(db)
-                            st.toast('Siaaap! Audio langsung memotong lagu di MediaCP!', icon='📡')
+                            st.toast('Siaaap! Audio mengudara & di-backup ke GDrive!', icon='📡')
                             st.rerun()
 
                 st.divider()
@@ -375,6 +408,10 @@ else:
                     with st.spinner("Memproduksi Kaset Master..."):
                         teks_bersih = bersihkan_untuk_audio(naskah_edit)
                         if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
+                            # --- TRIGGER BACKUP GDRIVE OTOMATIS ---
+                            t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
+                            t_gdrive.start()
+
                             db["status"] = "approved"
                             db["naskah"] = teks_bersih
                             save_db(db)
@@ -392,10 +429,8 @@ else:
                                     time.sleep(jeda)
                                     
                                 print(f"[INFO] JAM TAYANG! Kurir {urutan} lempar kaset terjadwal!", flush=True)
-                                # ---> INI YANG DIUBAH! CUMA PAKAI 1 NAMA FILE FIX:
                                 kirim_ke_radio(file_master_kurir, "berita_terjadwal_master.mp3")
 
-                            # Copy kaset untuk masing-masing jadwal biar nggak bentrok
                             for i, jam_tayang in enumerate(jadwal_list):
                                 file_copy_khusus = f"berita_siaran_copy_{i+1}.mp3"
                                 shutil.copy("berita_siaran.mp3", file_copy_khusus)
@@ -403,7 +438,7 @@ else:
                                 t_kurir = threading.Thread(target=kurir_ninja, args=(jam_tayang, i+1, file_copy_khusus))
                                 t_kurir.start()
                             
-                            st.toast(f'Audio beres! {len(jadwal_list)} Kurir jadwal udah jalan di background.', icon='🥷')
+                            st.toast(f'Beres! {len(jadwal_list)} Kurir jalan & Master di-backup ke GDrive.', icon='🥷')
                             st.rerun()
 
                 st.divider()
