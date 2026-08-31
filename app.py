@@ -199,7 +199,7 @@ def produksi_audio_elevenlabs(teks_audio, voice_id):
                 kaset_kencang.export("berita_siaran.mp3", format="mp3")
                 print("[INFO] Volume kaset berhasil dinaikkan +4 dB!", flush=True)
             except Exception as e:
-                print(f"[WARNING] Gagal nge-boost volume: {e}", flush=True)
+                print(f"[WARNING] Melewati boost volume karena format file: {e}", flush=True)
             return True
         else:
             st.error(f"ElevenLabs Error: {res.text}")
@@ -247,8 +247,10 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         headers = {'User-Agent': 'Mozilla/5.0'}
         url_login = "https://mediacp-eu1.arenastreaming.com:2020/index.php"
         data_login = {"username": WEB_USER, "user_password": WEB_PASS, "language": "default"}
+        
         sesi.get(url_login, headers=headers)
-        sesi.post(url_login, data=data_login, headers=headers)
+        login_res = sesi.post(url_login, data=data_login, headers=headers)
+        print(f"[DEBUG] Login MediaCP status: {login_res.status_code}", flush=True)
         
         url_upload = "https://mediacp-eu1.arenastreaming.com:2020/controller/Media/7/uploadTrack"
         payload = {'path': '/Berita'}
@@ -259,6 +261,8 @@ def kirim_ke_radio(file_lokal, nama_file_tujuan):
         with open(file_lokal, 'rb') as f:
             files = {'track': (nama_file_tujuan, f, 'audio/mpeg')}
             res = sesi.post(url_upload, data=payload, files=files, headers=headers_upload)
+
+        print(f"[DEBUG] Upload MediaCP response code: {res.status_code}", flush=True)
 
         if res.status_code == 200:
             print(f"[INFO] File {nama_file_tujuan} Berhasil Mengudara! Timer {WAKTU_TUNGGU_HAPUS}s On...", flush=True)
