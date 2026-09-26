@@ -27,14 +27,29 @@ WAKTU_TUNGGU_HAPUS = 600  # 10 MENIT
 # --- GLOBAL SECRETS ---
 WEB_USER = st.secrets["WEB_USER"]
 WEB_PASS = st.secrets["WEB_PASS"]
+TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 # --- GDRIVE SETTINGS ---
 GDRIVE_FOLDER_ID = "1NZu0i-jd3kgMR4SZEejhpZOXTyKeTnEG"
 
 # ==========================================
+# FUNGSI NOTIFIKASI TELEGRAM
+# ==========================================
+def kirim_notif_telegram(pesan):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": pesan}
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"[TELEGRAM ERROR] Gagal kirim notif: {e}", flush=True)
+
+# ==========================================
 # 1. SETUP TEMA & HALAMAN
 # ==========================================
-st.set_page_config(page_title="URadio Studio", page_icon="🎙️", layout="centered")
+st.set_page_config(page_title="URadio Studio", page_icon="🎙️", layout="wide")
 
 st.markdown("""
     <style>
@@ -142,12 +157,20 @@ TIKET_FILE = os.path.join(BASE_DIR, "tiket_sapu.json")
 
 def load_db():
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f: return json.load(f)
-    return {"status": "kosong", "info_mentah": "", "naskah": "", "penulis": "", "voice_id_penulis": "", "role_penulis": ""}
+        with open(DB_FILE, "r") as f: 
+            data = json.load(f)
+            if "history" not in data: data["history"] = []
+            return data
+    return {"status": "kosong", "info_mentah": "", "naskah": "", "penulis": "", "voice_id_penulis": "", "role_penulis": "", "history": []}
 
 def save_db(data):
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
+def catat_history(penulis, teks):
+    waktu_skrg = datetime.datetime.now(WIB).strftime("%Y-%m-%d %H:%M")
+    db.setdefault("history", []).append({"waktu": waktu_skrg, "penulis": penulis, "teks": teks})
+    if len(db["history"]) > 50: db["history"].pop(0) # Batas 50 history max
+    
 def set_tiket(nama_file, tiket):
     data = {}
     if os.path.exists(TIKET_FILE):
@@ -345,133 +368,158 @@ else:
 
     st.title(f"🎙️ Meja {user['role']}")
     
-    if user["role"] in ["Penyiar", "Narasumber"]:
-        with st.container(border=True):
-            st.subheader(f"📝 Draft Naskah Baru - {user['nama']}")
-            info_mentah = st.text_area("Informasi Mentah / Poin Statement:", value=db.get("info_mentah", ""), height=150)
-            
-            if st.button("🚀 Kirim ke Pemred", use_container_width=True):
-                if not info_mentah.strip(): st.warning("Isi informasi dulu!")
-                else:
-                    with st.spinner("AI Meracik Naskah Sesuai Karakter..."):
-                        try:
-                            gemini_key = st.secrets["GEMINI_API_KEY"]
-                            genai.configure(api_key=gemini_key)
-                            prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
-                            model = genai.GenerativeModel("gemini-1.5-flash")
-                            response = model.generate_content(prompt)
-                            
-                            db["status"] = "menunggu_validasi"
-                            db["info_mentah"] = info_mentah
-                            db["naskah"] = bersihkan_untuk_audio(response.text)
-                            db["penulis"] = user["nama"] 
-                            db["role_penulis"] = user["role"]
-                            db["voice_id_penulis"] = user["voice_id"] 
-                            save_db(db)
-                            
-                            st.success("Terkirim ke meja Agustian!")
-                            st.balloons()
-                            time.sleep(2)
-                            st.rerun()
-                        except Exception as e: st.error(f"Error AI: {e}")
+    # SPLIT LAYOUT: KIRI KERJA (70%), KANAN HISTORY (30%)
+    col_main, col_hist = st.columns([7, 3])
 
-        if db["status"] == "approved":
-            st.info("✅ Naskah terakhirmu sudah diproduksi / dijadwalkan.")
-
-    elif user["role"] == "Pemimpin Redaksi":
-        if db["status"] == "kosong":
-            st.info("Belum ada draft masuk.")
-            
-        elif db["status"] == "menunggu_validasi":
-            st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Unknown')} ({db.get('role_penulis', 'Penyiar')})")
-            
+    with col_main:
+        if user["role"] in ["Penyiar", "Narasumber"]:
             with st.container(border=True):
-                naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=200)
-                suara_yg_dipakai = db.get("voice_id_penulis", "")
-                nama_penulis_audio = db.get("penulis", "Unknown")
+                st.subheader(f"📝 Draft Naskah Baru - {user['nama']}")
+                info_mentah = st.text_area("Informasi Mentah / Poin Statement:", value=db.get("info_mentah", ""), height=150)
                 
-                st.divider()
-                st.markdown("### 🚀 JALUR EKSPRES (BREAKING NEWS)")
-                if st.button("🔥 Siarkan Sekarang", use_container_width=True):
-                    with st.spinner("Memproduksi Audio & Menerobos ke Radio..."):
-                        teks_bersih = bersihkan_untuk_audio(naskah_edit)
-                        if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
-                            # --- TRIGGER BACKUP GDRIVE OTOMATIS (THREADING) ---
-                            t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
-                            t_gdrive.start()
-
-                            # --- EKSEKUSI LANGSUNG KE RADIO ---
-                            print("[INFO] Mengeksekusi pengiriman langsung ke MediaCP...", flush=True)
-                            hasil_radio = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
-                            print(f"[INFO] Status kirim ke radio: {hasil_radio}", flush=True)
-                            
-                            db["status"] = "approved"
-                            db["naskah"] = teks_bersih
-                            save_db(db)
-                            st.toast('Siaaap! Audio mengudara & di-backup ke GDrive!', icon='📡')
-                            st.rerun()
-
-                st.divider()
-                st.markdown("### 🗓️ JALUR TERJADWAL (CUSTOM SCHEDULE)")
-                jadwal_list = []
-                cols = st.columns(3) 
-                for i in range(st.session_state.jumlah_jadwal):
-                    with cols[i % 3]:
-                        waktu_awal = (datetime.datetime.now(WIB) + datetime.timedelta(minutes=5 * (i+1))).time()
-                        t = st.time_input(f"Jam Tayang {i+1}", value=waktu_awal, key=f"waktu_{i}")
-                        jadwal_list.append(t)
-                
-                if st.button("➕ Tambah Jam Tayang"):
-                    st.session_state.jumlah_jadwal += 1
-                    st.rerun()
-
-                if st.button("✅ Approve & Jadwalkan Waktu di Atas", use_container_width=True):
-                    with st.spinner("Memproduksi Kaset Master..."):
-                        teks_bersih = bersihkan_untuk_audio(naskah_edit)
-                        if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
-                            # --- TRIGGER BACKUP GDRIVE OTOMATIS ---
-                            t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
-                            t_gdrive.start()
-
-                            db["status"] = "approved"
-                            db["naskah"] = teks_bersih
-                            save_db(db)
-                            
-                            def kurir_ninja(target_waktu, urutan, file_master_kurir):
-                                sekarang = datetime.datetime.now(WIB)
-                                waktu_target = datetime.datetime.combine(sekarang.date(), target_waktu)
-                                waktu_target = waktu_target.replace(tzinfo=WIB)
-                                if waktu_target < sekarang:
-                                    waktu_target += datetime.timedelta(days=1)
-                                jeda = (waktu_target - sekarang).total_seconds()
+                if st.button("🚀 Kirim ke Pemred", use_container_width=True):
+                    if not info_mentah.strip(): st.warning("Isi informasi dulu!")
+                    else:
+                        with st.spinner("AI Meracik Naskah Sesuai Karakter..."):
+                            try:
+                                gemini_key = st.secrets["GEMINI_API_KEY"]
+                                genai.configure(api_key=gemini_key)
+                                prompt = f"{user['prompt_system']}\n\nInformasi Mentah:\n{info_mentah}"
+                                model = genai.GenerativeModel("gemini-pro") # Pakai gemini-pro biar nggak error 404
+                                response = model.generate_content(prompt)
                                 
-                                if jeda > 5:
-                                    print(f"[INFO] Kurir {urutan} standby! OTW MediaCP {int(jeda)} detik lagi...", flush=True)
-                                    time.sleep(jeda)
+                                db["status"] = "menunggu_validasi"
+                                db["info_mentah"] = info_mentah
+                                db["naskah"] = bersihkan_untuk_audio(response.text)
+                                db["penulis"] = user["nama"] 
+                                db["role_penulis"] = user["role"]
+                                db["voice_id_penulis"] = user["voice_id"] 
+                                save_db(db)
+                                
+                                # KIRIM NOTIF TELEGRAM KE BOS
+                                kirim_notif_telegram(f"🚨 BOS! Ada naskah baru masuk dari {user['nama']}. Buruan cek web URadio sekarang!")
+                                
+                                st.success("Terkirim ke meja Agustian!")
+                                st.balloons()
+                                time.sleep(2)
+                                st.rerun()
+                            except Exception as e: st.error(f"Error AI: {e}")
+
+            if db["status"] == "approved":
+                st.info("✅ Naskah terakhirmu sudah diproduksi / dijadwalkan.")
+
+        elif user["role"] == "Pemimpin Redaksi":
+            if db["status"] == "kosong":
+                st.info("Belum ada draft masuk.")
+                
+            elif db["status"] == "menunggu_validasi":
+                st.warning(f"⚠️ Naskah Masuk dari: {db.get('penulis', 'Unknown')} ({db.get('role_penulis', 'Penyiar')})")
+                
+                with st.container(border=True):
+                    naskah_edit = st.text_area("Review Naskah:", value=db["naskah"], height=200)
+                    suara_yg_dipakai = db.get("voice_id_penulis", "")
+                    nama_penulis_audio = db.get("penulis", "Unknown")
+                    
+                    st.divider()
+                    st.markdown("### 🚀 JALUR EKSPRES (BREAKING NEWS)")
+                    if st.button("🔥 Siarkan Sekarang", use_container_width=True):
+                        with st.spinner("Memproduksi Audio & Menerobos ke Radio..."):
+                            teks_bersih = bersihkan_untuk_audio(naskah_edit)
+                            if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
+                                # --- TRIGGER BACKUP GDRIVE OTOMATIS (THREADING) ---
+                                t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
+                                t_gdrive.start()
+
+                                # --- EKSEKUSI LANGSUNG KE RADIO ---
+                                print("[INFO] Mengeksekusi pengiriman langsung ke MediaCP...", flush=True)
+                                hasil_radio = kirim_ke_radio("berita_siaran.mp3", "berita_terbaru_ekspres.mp3")
+                                print(f"[INFO] Status kirim ke radio: {hasil_radio}", flush=True)
+                                
+                                catat_history(nama_penulis_audio, teks_bersih) # CATAT KE HISTORY
+                                db["status"] = "approved"
+                                db["naskah"] = teks_bersih
+                                save_db(db)
+                                st.toast('Siaaap! Audio mengudara & di-backup ke GDrive!', icon='📡')
+                                st.rerun()
+
+                    st.divider()
+                    st.markdown("### 🗓️ JALUR TERJADWAL (CUSTOM SCHEDULE)")
+                    jadwal_list = []
+                    cols = st.columns(3) 
+                    for i in range(st.session_state.jumlah_jadwal):
+                        with cols[i % 3]:
+                            waktu_awal = (datetime.datetime.now(WIB) + datetime.timedelta(minutes=5 * (i+1))).time()
+                            t = st.time_input(f"Jam Tayang {i+1}", value=waktu_awal, key=f"waktu_{i}")
+                            jadwal_list.append(t)
+                    
+                    if st.button("➕ Tambah Jam Tayang"):
+                        st.session_state.jumlah_jadwal += 1
+                        st.rerun()
+
+                    if st.button("✅ Approve & Jadwalkan Waktu di Atas", use_container_width=True):
+                        with st.spinner("Memproduksi Kaset Master..."):
+                            teks_bersih = bersihkan_untuk_audio(naskah_edit)
+                            if produksi_audio_elevenlabs(teks_bersih, suara_yg_dipakai):
+                                # --- TRIGGER BACKUP GDRIVE OTOMATIS ---
+                                t_gdrive = threading.Thread(target=simpan_ke_gdrive, args=("berita_siaran.mp3", nama_penulis_audio))
+                                t_gdrive.start()
+
+                                catat_history(nama_penulis_audio, teks_bersih) # CATAT KE HISTORY
+                                db["status"] = "approved"
+                                db["naskah"] = teks_bersih
+                                save_db(db)
+                                
+                                def kurir_ninja(target_waktu, urutan, file_master_kurir):
+                                    sekarang = datetime.datetime.now(WIB)
+                                    waktu_target = datetime.datetime.combine(sekarang.date(), target_waktu)
+                                    waktu_target = waktu_target.replace(tzinfo=WIB)
+                                    if waktu_target < sekarang:
+                                        waktu_target += datetime.timedelta(days=1)
+                                    jeda = (waktu_target - sekarang).total_seconds()
                                     
-                                print(f"[INFO] JAM TAYANG! Kurir {urutan} lempar kaset terjadwal!", flush=True)
-                                kirim_ke_radio(file_master_kurir, "berita_terjadwal_master.mp3")
+                                    if jeda > 5:
+                                        print(f"[INFO] Kurir {urutan} standby! OTW MediaCP {int(jeda)} detik lagi...", flush=True)
+                                        time.sleep(jeda)
+                                        
+                                    print(f"[INFO] JAM TAYANG! Kurir {urutan} lempar kaset terjadwal!", flush=True)
+                                    kirim_ke_radio(file_master_kurir, "berita_terjadwal_master.mp3")
 
-                            for i, jam_tayang in enumerate(jadwal_list):
-                                file_copy_khusus = f"berita_siaran_copy_{i+1}.mp3"
-                                shutil.copy("berita_siaran.mp3", file_copy_khusus)
+                                for i, jam_tayang in enumerate(jadwal_list):
+                                    file_copy_khusus = f"berita_siaran_copy_{i+1}.mp3"
+                                    shutil.copy("berita_siaran.mp3", file_copy_khusus)
+                                    
+                                    t_kurir = threading.Thread(target=kurir_ninja, args=(jam_tayang, i+1, file_copy_khusus))
+                                    t_kurir.start()
                                 
-                                t_kurir = threading.Thread(target=kurir_ninja, args=(jam_tayang, i+1, file_copy_khusus))
-                                t_kurir.start()
-                            
-                            st.toast(f'Beres! {len(jadwal_list)} Kurir jalan & Master di-backup ke GDrive.', icon='🥷')
-                            st.rerun()
+                                st.toast(f'Beres! {len(jadwal_list)} Kurir jalan & Master di-backup ke GDrive.', icon='🥷')
+                                st.rerun()
 
-                st.divider()
-                if st.button("❌ Tolak Naskah", type="secondary", use_container_width=True):
-                    db["status"] = "kosong"
-                    db["info_mentah"] = ""
-                    st.session_state.jumlah_jadwal = 1
-                    save_db(db)
-                    st.rerun()
-                        
-        elif db["status"] == "approved":
-            st.success("✅ Naskah Approved! Master kaset siap beroperasi.")
-            st.audio("berita_siaran.mp3")
-            with open("berita_siaran.mp3", "rb") as file_mp3:
-                st.download_button(label="⬇️ Download Kaset Master", data=file_mp3, file_name="berita_master.mp3", mime="audio/mpeg", use_container_width=True)
+                    st.divider()
+                    if st.button("❌ Tolak Naskah", type="secondary", use_container_width=True):
+                        db["status"] = "kosong"
+                        db["info_mentah"] = ""
+                        st.session_state.jumlah_jadwal = 1
+                        save_db(db)
+                        st.rerun()
+                            
+            elif db["status"] == "approved":
+                st.success("✅ Naskah Approved! Master kaset siap beroperasi.")
+                st.audio("berita_siaran.mp3")
+                with open("berita_siaran.mp3", "rb") as file_mp3:
+                    st.download_button(label="⬇️ Download Kaset Master", data=file_mp3, file_name="berita_master.mp3", mime="audio/mpeg", use_container_width=True)
+
+    # KOLOM KANAN: HISTORY NASKAH
+    with col_hist:
+        st.markdown("### 📜 Riwayat Siaran")
+        hist_data = db.get("history", [])
+        
+        if not hist_data:
+            st.info("Belum ada naskah yang mengudara.")
+        else:
+            # Dibalik biar naskah paling baru ada di atas
+            for h in reversed(hist_data):
+                # Aturan: Pemred lihat semua, Penyiar cuma lihat history miliknya
+                if user["role"] == "Pemimpin Redaksi" or h["penulis"] == user["nama"]:
+                    with st.container(border=True):
+                        st.caption(f"🗓️ {h['waktu']} | ✍️ {h['penulis']}")
+                        st.write(f"{h['teks'][:150]}...") # Tampilkan cuplikan 150 huruf pertama
